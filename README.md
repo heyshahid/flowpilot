@@ -81,8 +81,8 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 ## 🗺️ Roadmap & Milestones
 
 - [x] **Phase 1: Architecture, Security Boundaries & Core Engine Specification**
-- [ ] **Phase 2: UI Foundation (Dashboard, Navigation & Visual Editor Shell)**
-- [ ] **Phase 3: React Flow Visual Canvas & Dynamic Node Configuration Drawer**
+- [x] **Phase 2: UI Foundation (Dashboard, Navigation & Visual Editor Shell)**
+- [x] **Phase 3: React Flow Visual Canvas & Dynamic Node Configuration Drawer**
 - [ ] **Phase 4: Execution Engine & Worker Integration**
 - [ ] **Phase 5: Core Integrations (Webhooks, HTTP Request, SMTP Email)**
 - [ ] **Phase 6: Advanced Automation (Cron Schedules, Delays, Retries)**

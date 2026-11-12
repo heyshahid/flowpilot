@@ -1,0 +1,44 @@
+import React from 'react';
+import {
+  Play,
+  Webhook,
+  Clock,
+  Globe,
+  Mail,
+  Bell,
+  GitBranch,
+  Filter,
+  GitMerge,
+  Sliders,
+  Cpu,
+  FileCode,
+  Bot,
+  Tag,
+  FileText,
+  Layers,
+  HelpCircle,
+} from 'lucide-react';
+
+const ICON_MAP: Record<string, React.ElementType> = {
+  Play,
+  Webhook,
+  Clock,
+  Globe,
+  Mail,
+  Bell,
+  GitBranch,
+  Filter,
+  GitMerge,
+  Sliders,
+  Cpu,
+  FileCode,
+  Bot,
+  Tag,
+  FileText,
+  Layers,
+};
+
+export function resolveNodeIcon(iconName?: string): React.ElementType {
+  if (!iconName) return Layers;
+  return ICON_MAP[iconName] || Layers;
+}

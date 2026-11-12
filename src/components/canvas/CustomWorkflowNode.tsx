@@ -2,19 +2,10 @@
 
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import {
-  Webhook,
-  Play,
-  Globe,
-  Mail,
-  GitBranch,
-  Sliders,
-  Bot,
-  Database,
-  Layers,
-  HelpCircle,
-} from 'lucide-react';
+import { getNodeDefinition } from '@/core/registry/nodeRegistry';
+import { resolveNodeIcon } from './nodeIcons';
 import { cn } from '@/lib/utils';
+import { AlertCircle, CheckCircle2, Copy, Trash2 } from 'lucide-react';
 
 export interface WorkflowNodeData {
   title: string;
@@ -22,81 +13,76 @@ export interface WorkflowNodeData {
   nodeType: string;
   description?: string;
   config?: Record<string, unknown>;
-  hasMultipleOutputs?: boolean;
+  validationErrors?: string[];
+  isConfigured?: boolean;
+  onDuplicate?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 const CATEGORY_STYLES = {
   trigger: {
-    bg: 'bg-blue-50/60',
+    bg: 'bg-blue-50/80',
     border: 'border-blue-200',
     iconColor: 'text-blue-600',
     badge: 'bg-blue-100 text-blue-700',
   },
   action: {
-    bg: 'bg-emerald-50/60',
+    bg: 'bg-emerald-50/80',
     border: 'border-emerald-200',
     iconColor: 'text-emerald-600',
     badge: 'bg-emerald-100 text-emerald-700',
   },
   logic: {
-    bg: 'bg-amber-50/60',
+    bg: 'bg-amber-50/80',
     border: 'border-amber-200',
     iconColor: 'text-amber-600',
     badge: 'bg-amber-100 text-amber-700',
   },
   data: {
-    bg: 'bg-indigo-50/60',
+    bg: 'bg-indigo-50/80',
     border: 'border-indigo-200',
     iconColor: 'text-indigo-600',
     badge: 'bg-indigo-100 text-indigo-700',
   },
   ai: {
-    bg: 'bg-purple-50/60',
+    bg: 'bg-purple-50/80',
     border: 'border-purple-200',
     iconColor: 'text-purple-600',
     badge: 'bg-purple-100 text-purple-700',
   },
 };
 
-function getNodeIcon(nodeType: string, category: string) {
-  if (nodeType.includes('webhook')) return Webhook;
-  if (nodeType.includes('manual') || nodeType.includes('play')) return Play;
-  if (nodeType.includes('http') || nodeType.includes('request')) return Globe;
-  if (nodeType.includes('email') || nodeType.includes('mail')) return Mail;
-  if (nodeType.includes('ifElse') || nodeType.includes('switch')) return GitBranch;
-  if (nodeType.includes('transform') || nodeType.includes('variable')) return Sliders;
-  if (nodeType.includes('ai') || nodeType.includes('gpt')) return Bot;
-  if (nodeType.includes('database') || nodeType.includes('query')) return Database;
-  return Layers;
-}
-
-export const CustomWorkflowNode = memo(({ data, selected }: NodeProps) => {
+export const CustomWorkflowNode = memo(({ id, data, selected }: NodeProps) => {
   const nodeData = data as unknown as WorkflowNodeData;
-  const category = nodeData.category || 'action';
+  const definition = getNodeDefinition(nodeData.nodeType || '');
+  const category = (definition?.category || nodeData.category || 'action') as keyof typeof CATEGORY_STYLES;
   const styles = CATEGORY_STYLES[category] || CATEGORY_STYLES.action;
-  const Icon = getNodeIcon(nodeData.nodeType || '', category);
-  const isTrigger = category === 'trigger';
-  const isIfElse = nodeData.nodeType === 'logic.ifElse';
+  const Icon = resolveNodeIcon(definition?.icon);
+
+  const hasInputs = (definition?.inputs.length || 0) > 0 || category !== 'trigger';
+  const outputs = definition?.outputs || [{ id: 'default', name: 'Next' }];
+  const hasErrors = (nodeData.validationErrors?.length || 0) > 0;
 
   return (
     <div
       className={cn(
-        'w-64 rounded-xl border bg-white p-3.5 shadow-sm transition-all text-left select-none',
+        'w-64 rounded-xl border bg-white p-3.5 shadow-sm transition-all text-left select-none relative group',
         styles.border,
-        selected ? 'ring-2 ring-blue-600 shadow-md' : 'hover:border-slate-400'
+        selected ? 'ring-2 ring-blue-600 shadow-md' : 'hover:border-slate-400',
+        hasErrors && 'border-amber-400 ring-1 ring-amber-300'
       )}
     >
-      {/* Target Handle (Incoming connection) - Not for Triggers */}
-      {!isTrigger && (
+      {/* Target Handle (Incoming connection) - Trigger nodes have no input handle */}
+      {hasInputs && (
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2.5 !h-2.5 !bg-blue-600 !border-2 !border-white"
+          className="!w-2.5 !h-2.5 !bg-blue-600 !border-2 !border-white transition-transform hover:scale-125"
         />
       )}
 
       {/* Header */}
-      <div className="flex items-center gap-2.5 mb-2">
+      <div className="flex items-center gap-2.5 mb-1.5">
         <div
           className={cn(
             'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border',
@@ -117,49 +103,61 @@ export const CustomWorkflowNode = memo(({ data, selected }: NodeProps) => {
             >
               {category}
             </span>
+
+            {/* Validation Indicator */}
+            {hasErrors ? (
+              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-600" title={nodeData.validationErrors?.join(', ')}>
+                <AlertCircle className="w-3 h-3 text-amber-500" />
+                <span>Issue</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-0.5 text-[10px] text-emerald-600" title="Node configured">
+                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              </span>
+            )}
           </div>
           <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5">
-            {nodeData.title || 'Untitled Node'}
+            {nodeData.title || definition?.displayName || 'Untitled Node'}
           </h4>
         </div>
       </div>
 
       {/* Description */}
-      {nodeData.description && (
-        <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-          {nodeData.description}
-        </p>
-      )}
+      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+        {nodeData.description || definition?.description || ''}
+      </p>
 
-      {/* Source Handles (Outgoing connections) */}
-      {isIfElse ? (
-        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold">
-          <div className="flex items-center gap-1 text-emerald-600">
-            <span>TRUE</span>
-            <Handle
-              type="source"
-              id="true"
-              position={Position.Right}
-              style={{ top: '65%' }}
-              className="!w-2.5 !h-2.5 !bg-emerald-600 !border-2 !border-white"
-            />
-          </div>
-          <div className="flex items-center gap-1 text-rose-600">
-            <span>FALSE</span>
-            <Handle
-              type="source"
-              id="false"
-              position={Position.Right}
-              style={{ top: '85%' }}
-              className="!w-2.5 !h-2.5 !bg-rose-600 !border-2 !border-white"
-            />
-          </div>
+      {/* Dynamic Source Handles */}
+      {outputs.length > 1 ? (
+        <div className="mt-3 pt-2 border-t border-slate-100 space-y-1.5 text-[10px] font-bold">
+          {outputs.map((port, idx) => (
+            <div
+              key={port.id}
+              className={cn(
+                'flex items-center justify-end gap-1.5',
+                port.id === 'true' ? 'text-emerald-600' : port.id === 'false' ? 'text-rose-600' : 'text-slate-600'
+              )}
+            >
+              <span>{port.label || port.name.toUpperCase()}</span>
+              <Handle
+                type="source"
+                id={port.id}
+                position={Position.Right}
+                style={{ top: `${60 + idx * 24}%` }}
+                className={cn(
+                  '!w-2.5 !h-2.5 !border-2 !border-white transition-transform hover:scale-125',
+                  port.id === 'true' ? '!bg-emerald-600' : port.id === 'false' ? '!bg-rose-600' : '!bg-blue-600'
+                )}
+              />
+            </div>
+          ))}
         </div>
       ) : (
         <Handle
           type="source"
+          id={outputs[0]?.id || 'default'}
           position={Position.Right}
-          className="!w-2.5 !h-2.5 !bg-blue-600 !border-2 !border-white"
+          className="!w-2.5 !h-2.5 !bg-blue-600 !border-2 !border-white transition-transform hover:scale-125"
         />
       )}
     </div>
@@ -167,4 +165,3 @@ export const CustomWorkflowNode = memo(({ data, selected }: NodeProps) => {
 });
 
 CustomWorkflowNode.displayName = 'CustomWorkflowNode';
-

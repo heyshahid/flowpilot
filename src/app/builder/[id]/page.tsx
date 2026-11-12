@@ -1,51 +1,67 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   applyNodeChanges,
   applyEdgeChanges,
   addEdge,
+  useReactFlow,
   Node,
   Edge,
   OnNodesChange,
   OnEdgesChange,
   OnConnect,
+  IsValidConnection,
 } from '@xyflow/react';
 
 import { workflowStore, WorkflowRecord } from '@/lib/storage/workflowStore';
-import { FlowPilotExecutor } from '@/core/engine/executor';
-import { ExecutionResult, WorkflowNode, WorkflowEdge } from '@/core/types/workflow';
+import { getNodeDefinition } from '@/core/registry/nodeRegistry';
+import { validateWorkflowGraph, ValidationReport } from '@/core/validation/graphValidator';
+import { WorkflowNode, WorkflowEdge } from '@/core/types/workflow';
 
 import { CustomWorkflowNode, WorkflowNodeData } from '@/components/canvas/CustomWorkflowNode';
-import { NodeLibrary, AvailableNodeItem } from '@/components/canvas/NodeLibrary';
+import { NodeLibrary } from '@/components/canvas/NodeLibrary';
 import { NodeConfigPanel } from '@/components/canvas/NodeConfigPanel';
-import { ExecutionDrawer } from '@/components/canvas/ExecutionDrawer';
+import { ValidationDrawer } from '@/components/canvas/ValidationDrawer';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
 import {
   ArrowLeft,
   Save,
-  Play,
   RotateCcw,
   RotateCw,
   Power,
   ShieldCheck,
   CheckCircle2,
-  Sparkles,
+  AlertTriangle,
+  Play,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 
-export default function BuilderPage() {
+interface HistorySnapshot {
+  nodes: Node[];
+  edges: Edge[];
+}
+
+function BuilderCanvas() {
   const params = useParams();
-  const router = useRouter();
   const workflowId = params?.id as string;
+  const { screenToFlowPosition, fitView } = useReactFlow();
 
   const [workflow, setWorkflow] = useState<WorkflowRecord | null>(null);
   const [workflowName, setWorkflowName] = useState('Untitled Workflow');
@@ -56,15 +72,19 @@ export default function BuilderPage() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  // Save & Run State
+  // History Stack (Undo/Redo)
+  const historyRef = useRef<HistorySnapshot[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const isUndoRedoAction = useRef<boolean>(false);
+
+  // Save & Autosave State
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('Saved');
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
 
-  // Execution Drawer State
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
+  // Validation Drawer State
+  const [isValidationOpen, setIsValidationOpen] = useState(false);
+  const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
 
   // Register Custom Node Type
   const nodeTypes = useMemo(
@@ -74,7 +94,80 @@ export default function BuilderPage() {
     []
   );
 
-  // Load Workflow on Mount
+  // Helper to push history
+  const pushHistory = useCallback((currentNodes: Node[], currentEdges: Edge[]) => {
+    if (isUndoRedoAction.current) return;
+
+    const snapshot: HistorySnapshot = {
+      nodes: JSON.parse(JSON.stringify(currentNodes)),
+      edges: JSON.parse(JSON.stringify(currentEdges)),
+    };
+
+    const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+    nextHistory.push(snapshot);
+    if (nextHistory.length > 30) nextHistory.shift();
+
+    historyRef.current = nextHistory;
+    historyIndexRef.current = nextHistory.length - 1;
+  }, []);
+
+  // Run graph validation
+  const runValidation = useCallback(
+    (currentNodes: Node[], currentEdges: Edge[]): ValidationReport => {
+      const compiledNodes: WorkflowNode[] = currentNodes.map((n) => {
+        const data = n.data as unknown as WorkflowNodeData;
+        return {
+          id: n.id,
+          type: data.nodeType,
+          category: data.category,
+          name: data.title,
+          description: data.description,
+          config: data.config || {},
+          position: n.position,
+        };
+      });
+
+      const compiledEdges: WorkflowEdge[] = currentEdges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle || undefined,
+        targetHandle: e.targetHandle || undefined,
+      }));
+
+      const report = validateWorkflowGraph({
+        id: workflowId || 'wf_current',
+        name: workflowName,
+        nodes: compiledNodes,
+        edges: compiledEdges,
+      });
+
+      setValidationReport(report);
+
+      // Update validation errors on nodes
+      setNodes((nds) =>
+        nds.map((n) => {
+          const errors = report.nodeErrors[n.id] || [];
+          const currentErrors = (n.data as unknown as WorkflowNodeData).validationErrors || [];
+          if (JSON.stringify(errors) !== JSON.stringify(currentErrors)) {
+            return {
+              ...n,
+              data: {
+                ...(n.data as unknown as WorkflowNodeData),
+                validationErrors: errors,
+              } as unknown as Record<string, unknown>,
+            };
+          }
+          return n;
+        })
+      );
+
+      return report;
+    },
+    [workflowId, workflowName]
+  );
+
+  // Load Workflow from Store
   useEffect(() => {
     if (!workflowId) return;
     const existing = workflowStore.getById(workflowId);
@@ -83,7 +176,6 @@ export default function BuilderPage() {
       setWorkflowName(existing.name);
       setStatus(existing.status);
 
-      // Convert Phase 1 WorkflowNodes to React Flow Nodes
       const rfNodes: Node[] = existing.nodes.map((n) => ({
         id: n.id,
         type: 'custom',
@@ -97,7 +189,6 @@ export default function BuilderPage() {
         } as unknown as Record<string, unknown>,
       }));
 
-      // Convert Phase 1 WorkflowEdges to React Flow Edges
       const rfEdges: Edge[] = existing.edges.map((e) => ({
         id: e.id,
         source: e.source,
@@ -110,104 +201,295 @@ export default function BuilderPage() {
 
       setNodes(rfNodes);
       setEdges(rfEdges);
+
+      // Initial history snapshot
+      historyRef.current = [{ nodes: rfNodes, edges: rfEdges }];
+      historyIndexRef.current = 0;
+
+      // Initial validation
+      runValidation(rfNodes, rfEdges);
       setIsDirty(false);
+      setSaveStatus('saved');
     }
   }, [workflowId]);
 
-  // Handle Node Changes (Drag, select, etc.)
-  const onNodesChange: OnNodesChange = useCallback((changes) => {
-    setNodes((nds) => applyNodeChanges(changes, nds));
-    setIsDirty(true);
-  }, []);
-
-  // Handle Edge Changes (Delete edge)
-  const onEdgesChange: OnEdgesChange = useCallback((changes) => {
-    setEdges((eds) => applyEdgeChanges(changes, eds));
-    setIsDirty(true);
-  }, []);
-
-  // Handle New Connections
-  const onConnect: OnConnect = useCallback((connection) => {
-    setEdges((eds) =>
-      addEdge(
-        {
-          ...connection,
-          animated: true,
-          style: { stroke: '#2563EB', strokeWidth: 2 },
-        },
-        eds
-      )
-    );
-    setIsDirty(true);
-  }, []);
-
-  // Handle Node Click Selection
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNodeId(node.id);
-  }, []);
-
-  // Handle Canvas Background Click (Deselect)
-  const onPaneClick = useCallback(() => {
-    setSelectedNodeId(null);
-  }, []);
-
-  // Add Node from Library Tray
-  const handleAddNode = (item: AvailableNodeItem) => {
-    const newId = `node_${Math.random().toString(36).substring(2, 7)}`;
-    const newNode: Node = {
-      id: newId,
-      type: 'custom',
-      position: { x: 300 + Math.random() * 50, y: 180 + Math.random() * 50 },
-      data: {
-        title: item.name,
-        category: item.category,
-        nodeType: item.type,
-        description: item.description,
-        config: {},
-      } as unknown as Record<string, unknown>,
-    };
-
-    setNodes((nds) => [...nds, newNode]);
-    setSelectedNodeId(newId);
-    setIsDirty(true);
-  };
-
-  // Update Node Config from Inspector Panel
-  const handleUpdateNode = (
-    nodeId: string,
-    updatedData: Partial<WorkflowNodeData>
-  ) => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.id === nodeId) {
-          return {
-            ...n,
-            data: {
-              ...(n.data as unknown as WorkflowNodeData),
-              ...updatedData,
-            } as unknown as Record<string, unknown>,
-          };
+  // Handle Node Changes (Drag, select)
+  const onNodesChange: OnNodesChange = useCallback(
+    (changes) => {
+      setNodes((nds) => {
+        const nextNodes = applyNodeChanges(changes, nds);
+        const hasPosChange = changes.some((c) => c.type === 'position' && c.dragging === false);
+        if (hasPosChange) {
+          pushHistory(nextNodes, edges);
         }
-        return n;
-      })
-    );
-    setIsDirty(true);
-  };
+        return nextNodes;
+      });
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [edges, pushHistory]
+  );
 
-  // Delete Node
-  const handleDeleteNode = (nodeId: string) => {
-    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-    setEdges((eds) =>
-      eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
-    );
-    setSelectedNodeId(null);
-    setIsDirty(true);
-  };
+  // Handle Edge Changes
+  const onEdgesChange: OnEdgesChange = useCallback(
+    (changes) => {
+      setEdges((eds) => {
+        const nextEdges = applyEdgeChanges(changes, eds);
+        pushHistory(nodes, nextEdges);
+        return nextEdges;
+      });
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [nodes, pushHistory]
+  );
 
-  // Save Workflow Graph
-  const handleSave = () => {
+  // Connection Validation (Milestone 3B)
+  const isValidConnection: IsValidConnection = useCallback(
+    (connection) => {
+      // Rule 1: Prevent self connections
+      if (connection.source === connection.target) {
+        return false;
+      }
+
+      // Rule 2: Prevent connecting to Trigger nodes as target
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const targetData = targetNode?.data as unknown as WorkflowNodeData;
+      if (targetData?.category === 'trigger') {
+        return false;
+      }
+
+      // Rule 3: Prevent duplicate connections
+      const isDuplicate = edges.some(
+        (e) =>
+          e.source === connection.source &&
+          e.target === connection.target &&
+          e.sourceHandle === connection.sourceHandle
+      );
+      if (isDuplicate) {
+        return false;
+      }
+
+      return true;
+    },
+    [nodes, edges]
+  );
+
+  // Handle New Edge Connection
+  const onConnect: OnConnect = useCallback(
+    (connection) => {
+      if (!isValidConnection(connection)) return;
+
+      const newEdge: Edge = {
+        ...connection,
+        id: `e_${connection.source}_${connection.target}_${Math.random().toString(36).substring(2, 6)}`,
+        animated: true,
+        style: { stroke: '#2563EB', strokeWidth: 2 },
+      };
+
+      setEdges((eds) => {
+        const nextEdges = addEdge(newEdge, eds);
+        pushHistory(nodes, nextEdges);
+        return nextEdges;
+      });
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [nodes, isValidConnection, pushHistory]
+  );
+
+  // Drag and Drop from NodeLibrary (Milestone 3A)
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const nodeType = event.dataTransfer.getData('application/reactflow');
+      if (!nodeType) return;
+
+      const definition = getNodeDefinition(nodeType);
+      if (!definition) return;
+
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const newId = `node_${Math.random().toString(36).substring(2, 7)}`;
+      const newNode: Node = {
+        id: newId,
+        type: 'custom',
+        position,
+        data: {
+          title: definition.displayName,
+          category: definition.category,
+          nodeType: definition.type,
+          description: definition.description,
+          config: definition.defaultConfig,
+        } as unknown as Record<string, unknown>,
+      };
+
+      setNodes((nds) => {
+        const nextNodes = [...nds, newNode];
+        pushHistory(nextNodes, edges);
+        return nextNodes;
+      });
+
+      setSelectedNodeId(newId);
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [screenToFlowPosition, edges, pushHistory]
+  );
+
+  // Click-to-add action from NodeLibrary
+  const handleAddNode = useCallback(
+    (item: any) => {
+      const newId = `node_${Math.random().toString(36).substring(2, 7)}`;
+      const newNode: Node = {
+        id: newId,
+        type: 'custom',
+        position: { x: 300 + Math.random() * 50, y: 180 + Math.random() * 50 },
+        data: {
+          title: item.displayName,
+          category: item.category,
+          nodeType: item.type,
+          description: item.description,
+          config: item.defaultConfig,
+        } as unknown as Record<string, unknown>,
+      };
+
+      setNodes((nds) => {
+        const nextNodes = [...nds, newNode];
+        pushHistory(nextNodes, edges);
+        return nextNodes;
+      });
+
+      setSelectedNodeId(newId);
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [edges, pushHistory]
+  );
+
+  // Node Duplication (Milestone 3A & 3C)
+  const handleDuplicateNode = useCallback(
+    (nodeId: string) => {
+      const sourceNode = nodes.find((n) => n.id === nodeId);
+      if (!sourceNode) return;
+
+      const newId = `node_${Math.random().toString(36).substring(2, 7)}`;
+      const sourceData = sourceNode.data as unknown as WorkflowNodeData;
+
+      const duplicatedNode: Node = {
+        id: newId,
+        type: 'custom',
+        position: {
+          x: sourceNode.position.x + 40,
+          y: sourceNode.position.y + 40,
+        },
+        data: {
+          ...sourceData,
+          title: `${sourceData.title} (Copy)`,
+        } as unknown as Record<string, unknown>,
+      };
+
+      setNodes((nds) => {
+        const nextNodes = [...nds, duplicatedNode];
+        pushHistory(nextNodes, edges);
+        return nextNodes;
+      });
+
+      setSelectedNodeId(newId);
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [nodes, edges, pushHistory]
+  );
+
+  // Node Deletion
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((nds) => {
+        const nextNodes = nds.filter((n) => n.id !== nodeId);
+        setEdges((eds) => {
+          const nextEdges = eds.filter((e) => e.source !== nodeId && e.target !== nodeId);
+          pushHistory(nextNodes, nextEdges);
+          return nextEdges;
+        });
+        return nextNodes;
+      });
+
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null);
+      }
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [selectedNodeId, pushHistory]
+  );
+
+  // Node Config Update
+  const handleUpdateNode = useCallback(
+    (nodeId: string, updatedData: Partial<WorkflowNodeData>) => {
+      setNodes((nds) => {
+        const nextNodes = nds.map((n) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              data: {
+                ...(n.data as unknown as WorkflowNodeData),
+                ...updatedData,
+              } as unknown as Record<string, unknown>,
+            };
+          }
+          return n;
+        });
+        pushHistory(nextNodes, edges);
+        return nextNodes;
+      });
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    },
+    [edges, pushHistory]
+  );
+
+  // Undo and Redo Handlers (Milestone 3C)
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current > 0) {
+      isUndoRedoAction.current = true;
+      historyIndexRef.current -= 1;
+      const snapshot = historyRef.current[historyIndexRef.current];
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+      isUndoRedoAction.current = false;
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      isUndoRedoAction.current = true;
+      historyIndexRef.current += 1;
+      const snapshot = historyRef.current[historyIndexRef.current];
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+      isUndoRedoAction.current = false;
+    }
+  }, []);
+
+  // Save Workflow Structure
+  const handleSave = useCallback(() => {
     if (!workflow) return;
     setIsSaving(true);
+    setSaveStatus('saving');
 
     const compiledNodes: WorkflowNode[] = nodes.map((n) => {
       const data = n.data as unknown as WorkflowNodeData;
@@ -241,80 +523,91 @@ export default function BuilderPage() {
 
     workflowStore.save(updatedWorkflow);
     setWorkflow(updatedWorkflow);
+    runValidation(nodes, edges);
+
     setIsDirty(false);
     setIsSaving(false);
-    setSaveMessage('Saved');
-    setTimeout(() => setSaveMessage('Saved'), 2000);
-  };
+    setSaveStatus('saved');
+  }, [workflow, nodes, edges, workflowName, status, runValidation]);
 
-  // Test Run Workflow via Real Phase 1 Execution Engine
-  const handleTestRun = async () => {
-    setIsRunning(true);
-    setIsDrawerOpen(true);
+  // Debounced Autosave (1.5 seconds) (Milestone 3D)
+  useEffect(() => {
+    if (!isDirty || !workflow) return;
 
-    // Save first so execution matches canvas state
-    handleSave();
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 1500);
 
-    try {
-      const compiledNodes: WorkflowNode[] = nodes.map((n) => {
-        const data = n.data as unknown as WorkflowNodeData;
-        return {
-          id: n.id,
-          type: data.nodeType,
-          category: data.category,
-          name: data.title,
-          description: data.description,
-          config: data.config || {},
-          position: n.position,
-        };
-      });
+    return () => clearTimeout(timer);
+  }, [isDirty, nodes, edges, workflowName, status, handleSave, workflow]);
 
-      const compiledEdges: WorkflowEdge[] = edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle || undefined,
-        targetHandle: e.targetHandle || undefined,
-      }));
+  // Keyboard Shortcuts (Milestone 3C)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in form inputs
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
 
-      const testGraph = {
-        id: workflowId,
-        name: workflowName,
-        nodes: compiledNodes,
-        edges: compiledEdges,
-      };
+      // Ctrl+S or Cmd+S: Save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
 
-      // Execute via the real Phase 1 TypeScript DAG Engine!
-      const executor = new FlowPilotExecutor();
-      const testPayload = {
-        budget: 15000,
-        company: 'Wayne Enterprises',
-        email: 'bruce@wayne.corp',
-        leadName: 'Bruce Wayne',
-      };
+      // Ctrl+Z: Undo
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
 
-      const result = await executor.execute(testGraph, testPayload);
-      setExecutionResult(result);
-    } catch (err: unknown) {
-      setExecutionResult({
-        executionId: 'exec_failed',
-        workflowId,
-        status: 'failed',
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        durationMs: 0,
-        traces: [],
-        error: (err as Error).message,
-      });
-    } finally {
-      setIsRunning(false);
-    }
-  };
+      // Ctrl+Shift+Z or Ctrl+Y: Redo
+      if (
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') ||
+        ((e.ctrlKey || e.metaKey) && e.key === 'y')
+      ) {
+        e.preventDefault();
+        handleRedo();
+      }
+
+      // Delete or Backspace: Delete selected node
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeId) {
+          e.preventDefault();
+          handleDeleteNode(selectedNodeId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave, handleUndo, handleRedo, selectedNodeId, handleDeleteNode]);
+
+  // Warn on leave with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) || null,
     [nodes, selectedNodeId]
   );
+
+  const canUndo = historyIndexRef.current > 0;
+  const canRedo = historyIndexRef.current < historyRef.current.length - 1;
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-slate-50">
@@ -339,6 +632,7 @@ export default function BuilderPage() {
               onChange={(e) => {
                 setWorkflowName(e.target.value);
                 setIsDirty(true);
+                setSaveStatus('unsaved');
               }}
               className="text-sm font-bold text-slate-900 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-slate-50 px-1 py-0.5 rounded transition-all outline-none"
             />
@@ -348,32 +642,80 @@ export default function BuilderPage() {
           </div>
         </div>
 
-        {/* Center: Save State & Topology Metrics */}
-        <div className="hidden md:flex items-center gap-3 text-xs text-slate-400">
+        {/* Center: Save State & Topology Validation Status */}
+        <div className="hidden md:flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1 font-medium text-slate-600">
             <Layers className="w-3.5 h-3.5 text-slate-400" />
-            {nodes.length} Nodes, {edges.length} Edges
+            {nodes.length} Nodes, {edges.length} Connections
           </span>
           <span>•</span>
+
+          {/* Validation Status Pill */}
+          <button
+            onClick={() => {
+              runValidation(nodes, edges);
+              setIsValidationOpen(true);
+            }}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[11px] font-semibold hover:shadow-xs"
+          >
+            {validationReport?.isValid ? (
+              <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Valid Graph
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-700 bg-amber-50 border-amber-200">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                {validationReport?.errorsCount || 0} Issues
+              </span>
+            )}
+          </button>
+
+          <span>•</span>
+
+          {/* Save Status Indicator */}
           <span className="font-mono text-[11px]">
-            {isDirty ? (
+            {saveStatus === 'saving' ? (
+              <span className="text-blue-600 font-medium">Saving changes...</span>
+            ) : saveStatus === 'unsaved' ? (
               <span className="text-amber-600 font-medium">Unsaved changes</span>
             ) : (
               <span className="text-emerald-600 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Saved
+                <CheckCircle2 className="w-3 h-3" /> Autosaved
               </span>
             )}
           </span>
         </div>
 
-        {/* Right Actions: Undo/Redo, Test Run, Save, Status */}
+        {/* Right Actions: Undo/Redo, Validation Preview, Save */}
         <div className="flex items-center gap-2">
+          {/* Undo / Redo */}
+          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200/60">
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              className="p-1.5 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Undo (Ctrl+Z)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={!canRedo}
+              className="p-1.5 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Redo (Ctrl+Y)"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Status Toggle */}
           <button
             onClick={() => {
               const next = status === 'active' ? 'draft' : 'active';
               setStatus(next);
               setIsDirty(true);
+              setSaveStatus('unsaved');
             }}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               status === 'active'
@@ -385,18 +727,20 @@ export default function BuilderPage() {
             <span>{status === 'active' ? 'Active' : 'Draft'}</span>
           </button>
 
-          {/* Test Run Button */}
+          {/* Test Validation Button */}
           <Button
             variant="outline"
             size="sm"
-            onClick={handleTestRun}
-            isLoading={isRunning}
-            icon={<Play className="w-3.5 h-3.5 text-emerald-600" />}
+            onClick={() => {
+              runValidation(nodes, edges);
+              setIsValidationOpen(true);
+            }}
+            icon={<ShieldCheck className="w-3.5 h-3.5 text-blue-600" />}
           >
-            Test Run
+            Validate
           </Button>
 
-          {/* Save Button */}
+          {/* Manual Save Button */}
           <Button
             variant="primary"
             size="sm"
@@ -409,13 +753,17 @@ export default function BuilderPage() {
         </div>
       </header>
 
-      {/* 3-Panel Main Workspace */}
+      {/* 3-Panel Workspace */}
       <div className="relative flex flex-1 overflow-hidden">
-        {/* Left Panel: Node Library */}
+        {/* Left Panel: Centralized Node Library */}
         <NodeLibrary onAddNode={handleAddNode} />
 
-        {/* Center: React Flow Canvas */}
-        <div className="relative flex-1 h-full bg-slate-50">
+        {/* Center: React Flow Canvas with Drag & Drop */}
+        <div
+          className="relative flex-1 h-full bg-[#F8FAFC]"
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -423,8 +771,9 @@ export default function BuilderPage() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
+            isValidConnection={isValidConnection}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            onPaneClick={() => setSelectedNodeId(null)}
             fitView
             proOptions={{ hideAttribution: true }}
             className="bg-[#F8FAFC]"
@@ -440,28 +789,22 @@ export default function BuilderPage() {
             />
           </ReactFlow>
 
-          {/* Empty State Overlay if 0 nodes */}
+          {/* Empty State Overlay */}
           {nodes.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
-              <div className="rounded-xl border border-dashed border-slate-300 bg-white/80 p-6 shadow-sm max-w-sm pointer-events-auto">
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white/90 p-6 shadow-sm max-w-sm pointer-events-auto">
                 <Sparkles className="w-8 h-8 text-blue-600 mx-auto mb-2" />
                 <h3 className="font-bold text-sm text-slate-800">
                   Canvas is empty
                 </h3>
-                <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Select a trigger or action from the Node Library on the left to start building your automated flow.
+                <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
+                  Drag any node from the Node Library on the left onto the canvas, or click below to start with a Webhook Trigger.
                 </p>
                 <Button
                   size="sm"
                   variant="primary"
                   onClick={() =>
-                    handleAddNode({
-                      type: 'trigger.webhook',
-                      category: 'trigger',
-                      name: 'Webhook Trigger',
-                      description: 'Listen for inbound events',
-                      icon: Play,
-                    })
+                    handleAddNode(getNodeDefinition('trigger.webhook'))
                   }
                 >
                   Add Webhook Trigger
@@ -476,18 +819,26 @@ export default function BuilderPage() {
           selectedNode={selectedNode}
           onUpdateNode={handleUpdateNode}
           onDeleteNode={handleDeleteNode}
+          onDuplicateNode={handleDuplicateNode}
           onClose={() => setSelectedNodeId(null)}
         />
 
-        {/* Bottom Slide-Up Console: Live Execution Drawer */}
-        <ExecutionDrawer
-          isOpen={isDrawerOpen}
-          onClose={() => setIsDrawerOpen(false)}
-          result={executionResult}
-          isRunning={isRunning}
+        {/* Bottom Drawer: Validation Report */}
+        <ValidationDrawer
+          isOpen={isValidationOpen}
+          onClose={() => setIsValidationOpen(false)}
+          report={validationReport}
+          onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
         />
       </div>
     </div>
   );
 }
 
+export default function BuilderPage() {
+  return (
+    <ReactFlowProvider>
+      <BuilderCanvas />
+    </ReactFlowProvider>
+  );
+}
