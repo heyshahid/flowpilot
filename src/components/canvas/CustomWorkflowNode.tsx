@@ -5,7 +5,8 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { getNodeDefinition } from '@/core/registry/nodeRegistry';
 import { resolveNodeIcon } from './nodeIcons';
 import { cn } from '@/lib/utils';
-import { AlertCircle, CheckCircle2, Copy, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RotateCw, XCircle, Ban } from 'lucide-react';
+import { NodeExecutionStatus } from '@/core/execution/types';
 
 export interface WorkflowNodeData {
   title: string;
@@ -14,6 +15,7 @@ export interface WorkflowNodeData {
   description?: string;
   config?: Record<string, unknown>;
   validationErrors?: string[];
+  executionStatus?: NodeExecutionStatus;
   isConfigured?: boolean;
   onDuplicate?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -62,6 +64,7 @@ export const CustomWorkflowNode = memo(({ id, data, selected }: NodeProps) => {
   const hasInputs = (definition?.inputs.length || 0) > 0 || category !== 'trigger';
   const outputs = definition?.outputs || [{ id: 'default', name: 'Next' }];
   const hasErrors = (nodeData.validationErrors?.length || 0) > 0;
+  const execStatus = nodeData.executionStatus;
 
   return (
     <div
@@ -69,7 +72,11 @@ export const CustomWorkflowNode = memo(({ id, data, selected }: NodeProps) => {
         'w-64 rounded-xl border bg-white p-3.5 shadow-sm transition-all text-left select-none relative group',
         styles.border,
         selected ? 'ring-2 ring-blue-600 shadow-md' : 'hover:border-slate-400',
-        hasErrors && 'border-amber-400 ring-1 ring-amber-300'
+        hasErrors && 'border-amber-400 ring-1 ring-amber-300',
+        execStatus === 'RUNNING' && 'border-blue-500 ring-2 ring-blue-400 shadow-md animate-pulse',
+        execStatus === 'COMPLETED' && 'border-emerald-500 ring-1 ring-emerald-300',
+        execStatus === 'FAILED' && 'border-rose-500 ring-2 ring-rose-400',
+        execStatus === 'SKIPPED' && 'opacity-60 bg-slate-50'
       )}
     >
       {/* Target Handle (Incoming connection) - Trigger nodes have no input handle */}
@@ -104,8 +111,29 @@ export const CustomWorkflowNode = memo(({ id, data, selected }: NodeProps) => {
               {category}
             </span>
 
-            {/* Validation Indicator */}
-            {hasErrors ? (
+            {/* Execution / Validation Indicator */}
+            {execStatus ? (
+              execStatus === 'RUNNING' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-blue-600">
+                  <RotateCw className="w-3 h-3 animate-spin text-blue-600" />
+                  Run
+                </span>
+              ) : execStatus === 'COMPLETED' ? (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold text-emerald-600">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Done
+                </span>
+              ) : execStatus === 'FAILED' ? (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold text-rose-600">
+                  <XCircle className="w-3 h-3 text-rose-600" />
+                  Fail
+                </span>
+              ) : execStatus === 'SKIPPED' ? (
+                <span className="text-[10px] font-medium text-slate-400">
+                  Skipped
+                </span>
+              ) : null
+            ) : hasErrors ? (
               <span className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-600" title={nodeData.validationErrors?.join(', ')}>
                 <AlertCircle className="w-3 h-3 text-amber-500" />
                 <span>Issue</span>

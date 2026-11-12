@@ -36,6 +36,7 @@ import { CustomWorkflowNode, WorkflowNodeData } from '@/components/canvas/Custom
 import { NodeLibrary } from '@/components/canvas/NodeLibrary';
 import { NodeConfigPanel } from '@/components/canvas/NodeConfigPanel';
 import { ValidationDrawer } from '@/components/canvas/ValidationDrawer';
+import { ExecutionConsoleDrawer } from '@/components/canvas/ExecutionConsoleDrawer';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
@@ -85,6 +86,11 @@ function BuilderCanvas() {
   // Validation Drawer State
   const [isValidationOpen, setIsValidationOpen] = useState(false);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
+
+  // Execution Console State (Phase 4)
+  const [isExecutionConsoleOpen, setIsExecutionConsoleOpen] = useState(false);
+  const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   // Register Custom Node Type
   const nodeTypes = useMemo(
@@ -530,6 +536,95 @@ function BuilderCanvas() {
     setSaveStatus('saved');
   }, [workflow, nodes, edges, workflowName, status, runValidation]);
 
+  // Phase 4: Execute Workflow Action
+  const handleRunWorkflow = useCallback(async () => {
+    // 1. Validate graph first
+    const report = runValidation(nodes, edges);
+    if (!report.isValid) {
+      setIsValidationOpen(true);
+      return;
+    }
+
+    // 2. Save current state
+    handleSave();
+
+    setIsExecuting(true);
+    try {
+      const res = await fetch(`/api/v1/workflows/${workflowId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payload: {
+            source: 'builder_test_run',
+            timestamp: new Date().toISOString(),
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.executionId) {
+        setActiveExecutionId(data.executionId);
+        setIsExecutionConsoleOpen(true);
+      }
+    } catch (err) {
+      console.error('Failed to trigger execution:', err);
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [nodes, edges, runValidation, handleSave, workflowId]);
+
+  // Sync Live Execution Statuses to Nodes on Canvas
+  useEffect(() => {
+    if (!activeExecutionId) return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/executions/${activeExecutionId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted && data.execution) {
+          const statusMap: Record<string, any> = {};
+          for (const trace of data.execution.traces || []) {
+            statusMap[trace.nodeId] = trace.status;
+          }
+
+          setNodes((currentNodes) =>
+            currentNodes.map((n) => {
+              const execStatus = statusMap[n.id];
+              const curData = n.data as unknown as WorkflowNodeData;
+              if (execStatus && curData.executionStatus !== execStatus) {
+                return {
+                  ...n,
+                  data: {
+                    ...curData,
+                    executionStatus: execStatus,
+                  } as unknown as Record<string, unknown>,
+                };
+              }
+              return n;
+            })
+          );
+
+          if (
+            data.execution.status === 'COMPLETED' ||
+            data.execution.status === 'FAILED' ||
+            data.execution.status === 'CANCELLED'
+          ) {
+            clearInterval(interval);
+          }
+        }
+      } catch {
+        clearInterval(interval);
+      }
+    }, 700);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeExecutionId]);
+
   // Debounced Autosave (1.5 seconds) (Milestone 3D)
   useEffect(() => {
     if (!isDirty || !workflow) return;
@@ -717,11 +812,10 @@ function BuilderCanvas() {
               setIsDirty(true);
               setSaveStatus('unsaved');
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              status === 'active'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-            }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${status === 'active'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
           >
             <Power className="w-3.5 h-3.5" />
             <span>{status === 'active' ? 'Active' : 'Draft'}</span>
@@ -742,13 +836,25 @@ function BuilderCanvas() {
 
           {/* Manual Save Button */}
           <Button
-            variant="primary"
+            variant="outline"
             size="sm"
             onClick={handleSave}
             isLoading={isSaving}
             icon={<Save className="w-3.5 h-3.5" />}
           >
             Save
+          </Button>
+
+          {/* Phase 4: Run / Execute Button */}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleRunWorkflow}
+            isLoading={isExecuting}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"
+            icon={<Play className="w-3.5 h-3.5 fill-current" />}
+          >
+            Run
           </Button>
         </div>
       </header>
@@ -828,6 +934,14 @@ function BuilderCanvas() {
           isOpen={isValidationOpen}
           onClose={() => setIsValidationOpen(false)}
           report={validationReport}
+          onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
+        />
+
+        {/* Phase 4: Execution Console Drawer */}
+        <ExecutionConsoleDrawer
+          isOpen={isExecutionConsoleOpen}
+          onClose={() => setIsExecutionConsoleOpen(false)}
+          executionId={activeExecutionId}
           onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
         />
       </div>

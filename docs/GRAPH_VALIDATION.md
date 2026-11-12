@@ -34,3 +34,4 @@ In addition to whole-graph validation, the canvas enforces connection guards in 
 - **Self-Loop Prevention:** Rejects dragging a connection line from a node back to itself.
 - **Trigger Target Guard:** Rejects connecting an edge into a Trigger node (Triggers have no inputs).
 - **Duplicate Connection Guard:** Rejects creating redundant parallel edges between the exact same handles.
+

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { workflowStore } from '@/lib/storage/workflowStore';
-import { FlowPilotExecutor } from '@/core/engine/executor';
+import { executionQueue } from '@/core/execution/queue';
 
 export async function POST(
   req: NextRequest,
@@ -11,33 +11,50 @@ export async function POST(
     const workflow = workflowStore.getById(id);
     if (!workflow) {
       return NextResponse.json(
-        { success: false, error: 'Workflow not found.' },
+        { success: false, error: `Workflow "${id}" was not found.` },
         { status: 404 }
       );
     }
 
     let payload: Record<string, unknown> = {};
+    let waitForCompletion = false;
+
     try {
       const body = await req.json();
       payload = body.payload || {};
+      waitForCompletion = Boolean(body.wait || body.sync);
     } catch {
-      // Empty payload is acceptable
+      // Empty payload is permitted
     }
 
-    const executor = new FlowPilotExecutor();
-    const result = await executor.execute(workflow, payload);
-
-    // Update execution counters
-    workflow.executionCount = (workflow.executionCount || 0) + 1;
-    if (result.status === 'completed') {
-      workflow.successCount = (workflow.successCount || 0) + 1;
-    } else {
-      workflow.failureCount = (workflow.failureCount || 0) + 1;
+    // Check query params for ?wait=true
+    if (req.nextUrl.searchParams.get('wait') === 'true' || req.nextUrl.searchParams.get('sync') === 'true') {
+      waitForCompletion = true;
     }
-    workflow.lastExecutedAt = new Date().toISOString();
-    workflowStore.save(workflow);
 
-    return NextResponse.json({ success: true, result });
+    // Enqueue background execution job
+    const execution = await executionQueue.enqueue(id, payload);
+
+    if (waitForCompletion) {
+      const completedRecord = await executionQueue.waitForExecution(execution.id, 15000);
+      return NextResponse.json({
+        success: completedRecord.status === 'COMPLETED',
+        executionId: completedRecord.id,
+        status: completedRecord.status,
+        execution: completedRecord,
+      });
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        executionId: execution.id,
+        status: execution.status,
+        message: 'Workflow execution queued successfully.',
+        execution,
+      },
+      { status: 202 }
+    );
   } catch (error) {
     return NextResponse.json(
       { success: false, error: (error as Error).message },
@@ -45,4 +62,3 @@ export async function POST(
     );
   }
 }
-

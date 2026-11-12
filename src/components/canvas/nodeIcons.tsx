@@ -42,3 +42,4 @@ export function resolveNodeIcon(iconName?: string): React.ElementType {
   if (!iconName) return Layers;
   return ICON_MAP[iconName] || Layers;
 }
+

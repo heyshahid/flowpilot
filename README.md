@@ -3,7 +3,7 @@
 > **Visual AI Workflow Automation Platform**  
 > *Build workflows visually. Connect apps. Automate repetitive work.*
 
-[![Tests](https://img.shields.io/badge/tests-6%20passed-success)](https://github.com/heyshahid/flowpilot)
+[![Tests](https://img.shields.io/badge/tests-36%20passed-success)](https://github.com/heyshahid/flowpilot)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.1-black)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -73,8 +73,9 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 - [System Architecture Specification](./docs/ARCHITECTURE.md)
 - [Relational Database Schema (PostgreSQL DDL & RLS)](./docs/DATABASE_SCHEMA.md)
 - [Execution Engine & DAG Runtime Model](./docs/EXECUTION_ENGINE.md)
+- [Execution Engine Runtime & Lifecycle](./docs/EXECUTION_ENGINE_RUNTIME.md)
 - [Standard Node Catalog & Schemas](./docs/NODE_SPECIFICATIONS.md)
-- [Phase 1 Milestone Report](./docs/PHASE1_REPORT.md)
+- [Phase 4 Implementation Report](./docs/PHASE_4_IMPLEMENTATION.md)
 
 ---
 
@@ -83,7 +84,7 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 - [x] **Phase 1: Architecture, Security Boundaries & Core Engine Specification**
 - [x] **Phase 2: UI Foundation (Dashboard, Navigation & Visual Editor Shell)**
 - [x] **Phase 3: React Flow Visual Canvas & Dynamic Node Configuration Drawer**
-- [ ] **Phase 4: Execution Engine & Worker Integration**
+- [x] **Phase 4: Backend Workflow Execution Engine & Worker Integration**
 - [ ] **Phase 5: Core Integrations (Webhooks, HTTP Request, SMTP Email)**
 - [ ] **Phase 6: Advanced Automation (Cron Schedules, Delays, Retries)**
 - [ ] **Phase 7: AI Workflow Assistant (Natural Language to Workflow DAG)**

@@ -68,3 +68,4 @@ export interface NodeDefinition<TConfig> {
 | `ai.textGeneration` | AI Text Generator | `default` | `default` | LLM prompt completion (Gemini 2.5 Flash / GPT-4o Mini). |
 | `ai.classification` | AI Classification | `default` | `default` | Categorizes text into predefined intent/topic buckets. |
 | `ai.summarization` | AI Summarization | `default` | `default` | Summarizes lengthy transcripts, notes, or tickets. |
+

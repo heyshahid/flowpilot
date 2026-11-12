@@ -184,3 +184,4 @@ describe('FlowPilot Phase 3: Visual Builder & Node Registry Tests', () => {
     expect(report.errorsCount).toBe(0);
   });
 });
+

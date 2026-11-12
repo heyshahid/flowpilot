@@ -72,3 +72,4 @@ The Graph Validation Engine enforces the following strict invariants:
 2. **No Duplicate Connections:** Multiple edges between the same source handle and target handle are rejected.
 3. **Trigger Input Restriction:** Nodes of category `trigger` cannot serve as the `target` of any edge.
 4. **Acyclicity:** Cycles are detected via Kahn's algorithm and rejected.
+

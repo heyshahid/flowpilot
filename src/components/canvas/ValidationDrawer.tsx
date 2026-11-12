@@ -77,11 +77,10 @@ export const ValidationDrawer: React.FC<ValidationDrawerProps> = ({
           report.issues.map((issue, index) => (
             <div
               key={index}
-              className={`flex items-start justify-between p-3 rounded-lg border bg-white shadow-xs ${
-                issue.type === 'error'
-                  ? 'border-rose-200 bg-rose-50/20'
-                  : 'border-amber-200 bg-amber-50/20'
-              }`}
+              className={`flex items-start justify-between p-3 rounded-lg border bg-white shadow-xs ${issue.type === 'error'
+                ? 'border-rose-200 bg-rose-50/20'
+                : 'border-amber-200 bg-amber-50/20'
+                }`}
             >
               <div className="flex items-start gap-2.5">
                 {issue.type === 'error' ? (
@@ -116,3 +115,4 @@ export const ValidationDrawer: React.FC<ValidationDrawerProps> = ({
     </div>
   );
 };
+

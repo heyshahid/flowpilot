@@ -412,3 +412,4 @@ export function getAllNodeDefinitions(): NodeDefinition<any>[] {
 export function getNodeDefinitionsByCategory(category: NodeCategory): NodeDefinition<any>[] {
   return Object.values(NODE_REGISTRY).filter((n) => n.category === category);
 }
+
