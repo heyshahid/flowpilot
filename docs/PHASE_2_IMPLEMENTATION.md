@@ -127,3 +127,4 @@ Phase 2 is fully complete and verified. Phase 3 will introduce:
 2. Custom edge bezier paths with delete actions.
 3. Interactive variable picker (`{{ $steps... }}`) inside node configuration forms.
 4. Client-side real-time graph linting and validation badges.
+

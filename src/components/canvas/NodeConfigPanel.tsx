@@ -337,3 +337,4 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({
     </aside>
   );
 };
+

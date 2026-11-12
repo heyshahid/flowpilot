@@ -109,3 +109,4 @@ describe('FlowPilot Phase 2 Store & UI Integration Tests', () => {
     expect(result.traces[1].input.user).toBe('Shahid');
   });
 });
+
