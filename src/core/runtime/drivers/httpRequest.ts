@@ -1,5 +1,6 @@
 import { validateOutboundUrl } from '../../security/ssrf';
 import { maskSensitiveData } from '../../security/masking';
+import { credentialStore } from '../../../lib/storage/credentialStore';
 import { NodeDriver } from '../types';
 
 export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => {
@@ -26,6 +27,21 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
     let headers: Record<string, string> = {};
     if (resolvedConfig.headers && typeof resolvedConfig.headers === 'object') {
       headers = { ...(resolvedConfig.headers as Record<string, string>) };
+    }
+
+    // Attach credentials from Vault if referenced
+    if (resolvedConfig.credentialId) {
+      const cred = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+      if (cred) {
+        if (cred.token) {
+          headers['Authorization'] = `Bearer ${cred.token}`;
+        } else if (cred.apiKey) {
+          headers[cred.headerName || 'X-API-Key'] = cred.apiKey;
+        } else if (cred.username) {
+          const authStr = `${cred.username}:${cred.password || ''}`;
+          headers['Authorization'] = `Basic ${Buffer.from(authStr).toString('base64')}`;
+        }
+      }
     }
 
     let bodyData: BodyInit | null | undefined = undefined;

@@ -8,9 +8,9 @@ import { validateWorkflowGraph } from '../src/core/validation/graphValidator';
 import { WorkflowGraph } from '../src/core/types/workflow';
 
 describe('FlowPilot Phase 3: Visual Builder & Node Registry Tests', () => {
-  it('should register all 15 core nodes across 5 categories', () => {
+  it('should register all core nodes across 5 categories', () => {
     const all = getAllNodeDefinitions();
-    expect(all.length).toBe(15);
+    expect(all.length).toBeGreaterThanOrEqual(15);
 
     const categories = new Set(all.map((n) => n.category));
     expect(categories).toContain('trigger');

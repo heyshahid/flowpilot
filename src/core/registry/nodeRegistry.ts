@@ -71,6 +71,28 @@ export const SendNotificationSchema = z.object({
   message: z.string().min(1, 'Notification message is required'),
 });
 
+export const GoogleSheetsSchema = z.object({
+  action: z.enum(['readRows', 'appendRow', 'updateRow']).default('readRows'),
+  spreadsheetId: z.string().min(1, 'Spreadsheet ID is required'),
+  sheetName: z.string().default('Sheet1'),
+  limit: z.number().default(50),
+  values: z.record(z.unknown()).default({}),
+  credentialId: z.string().optional(),
+});
+
+export const SlackSchema = z.object({
+  channel: z.string().min(1, 'Slack channel is required'),
+  message: z.string().min(1, 'Message content is required'),
+  credentialId: z.string().optional(),
+});
+
+export const TelegramSchema = z.object({
+  chatId: z.string().min(1, 'Chat ID is required'),
+  message: z.string().min(1, 'Message content is required'),
+  parseMode: z.enum(['HTML', 'Markdown']).default('HTML'),
+  credentialId: z.string().optional(),
+});
+
 // -----------------------------------------------------------------------------
 // 3. LOGIC SCHEMAS
 // -----------------------------------------------------------------------------
@@ -264,6 +286,45 @@ export const NODE_REGISTRY: Record<string, NodeDefinition<any>> = {
     outputs: [{ id: 'default', name: 'Next' }],
     defaultConfig: { channel: 'in_app', message: '' },
     configSchema: SendNotificationSchema,
+  }),
+  'action.googleSheets': createDefinition({
+    type: 'action.googleSheets',
+    displayName: 'Google Sheets',
+    description: 'Read, append, or update rows in Google Sheets spreadsheets.',
+    category: 'action',
+    icon: 'FileSpreadsheet',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Result' }],
+    defaultConfig: {
+      action: 'readRows',
+      spreadsheetId: '',
+      sheetName: 'Sheet1',
+      limit: 50,
+      values: {},
+    },
+    configSchema: GoogleSheetsSchema,
+  }),
+  'action.slack': createDefinition({
+    type: 'action.slack',
+    displayName: 'Slack Message',
+    description: 'Send alerts and automated notifications to Slack channels.',
+    category: 'action',
+    icon: 'MessageSquare',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Sent' }],
+    defaultConfig: { channel: '#general', message: '' },
+    configSchema: SlackSchema,
+  }),
+  'action.telegram': createDefinition({
+    type: 'action.telegram',
+    displayName: 'Telegram Alert',
+    description: 'Send automated messages to Telegram chats and groups.',
+    category: 'action',
+    icon: 'Bot',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Sent' }],
+    defaultConfig: { chatId: '', message: '', parseMode: 'HTML' },
+    configSchema: TelegramSchema,
   }),
 
   // Logic

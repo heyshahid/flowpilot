@@ -17,6 +17,8 @@ import {
   FileText,
   Layers,
   HelpCircle,
+  FileSpreadsheet,
+  MessageSquare,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -36,6 +38,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Tag,
   FileText,
   Layers,
+  FileSpreadsheet,
+  MessageSquare,
 };
 
 export function resolveNodeIcon(iconName?: string): React.ElementType {

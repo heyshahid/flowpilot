@@ -8,6 +8,10 @@ import { sendEmailDriver } from './drivers/sendEmail';
 import { sendNotificationDriver } from './drivers/sendNotification';
 import { textGenerationDriver } from './drivers/textGeneration';
 import { delayDriver } from './drivers/delay';
+import { googleSheetsAdapter } from '../integrations/adapters/googleSheetsAdapter';
+import { slackAdapter } from '../integrations/adapters/slackAdapter';
+import { telegramAdapter } from '../integrations/adapters/telegramAdapter';
+import { credentialStore } from '../../lib/storage/credentialStore';
 
 export class NodeRuntimeRegistry {
   private drivers = new Map<string, NodeDriver>();
@@ -51,6 +55,35 @@ export class NodeRuntimeRegistry {
     this.registerDriver('action.httpRequest', httpRequestDriver);
     this.registerDriver('action.sendEmail', sendEmailDriver);
     this.registerDriver('action.sendNotification', sendNotificationDriver);
+
+    // Phase 5: Integration Actions
+    this.registerDriver('action.googleSheets', async (_context, resolvedConfig) => {
+      let credentials = undefined;
+      if (resolvedConfig.credentialId) {
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+      }
+      return googleSheetsAdapter.executeAction(
+        String(resolvedConfig.action || 'readRows'),
+        resolvedConfig,
+        credentials || undefined
+      );
+    });
+
+    this.registerDriver('action.slack', async (_context, resolvedConfig) => {
+      let credentials = undefined;
+      if (resolvedConfig.credentialId) {
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+      }
+      return slackAdapter.executeAction('sendMessage', resolvedConfig, credentials || undefined);
+    });
+
+    this.registerDriver('action.telegram', async (_context, resolvedConfig) => {
+      let credentials = undefined;
+      if (resolvedConfig.credentialId) {
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+      }
+      return telegramAdapter.executeAction('sendMessage', resolvedConfig, credentials || undefined);
+    });
 
     // Logic
     this.registerDriver('logic.ifElse', ifElseDriver);
