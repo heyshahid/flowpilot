@@ -97,3 +97,4 @@ export function compileGraphTopology(graph: WorkflowGraph): GraphTopology {
     inDegreeMap,
   };
 }
+

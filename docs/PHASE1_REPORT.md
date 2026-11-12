@@ -117,3 +117,4 @@ Duration:   542ms
 - Build the initial React Flow canvas workspace in Next.js App Router (`src/app/builder/[id]/page.tsx`).
 - Integrate the visual node palette and contextual node configuration drawer.
 - Connect the visual canvas save action to the verified `WorkflowGraph` JSON data structure.
+

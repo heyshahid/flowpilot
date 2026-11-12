@@ -75,3 +75,4 @@ function resolveSingleExpression(expression: string, context: WorkflowExecutionC
   // Literal value or unrecognized expression
   return undefined;
 }
+

@@ -183,3 +183,4 @@ Upon completing a step, the engine emits a structured telemetry trace:
 }
 ```
 Sensitive header values (`Authorization`, `X-Api-Key`, `Cookie`) are automatically masked with `[REDACTED]` prior to persistence.
+
