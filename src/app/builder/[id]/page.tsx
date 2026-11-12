@@ -92,6 +92,18 @@ function BuilderCanvas() {
   const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
 
+  // Auto-open execution drawer if URL has ?execution=id
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const execParam = urlParams.get('execution');
+      if (execParam) {
+        setActiveExecutionId(execParam);
+        setIsExecutionConsoleOpen(true);
+      }
+    }
+  }, []);
+
   // Register Custom Node Type
   const nodeTypes = useMemo(
     () => ({

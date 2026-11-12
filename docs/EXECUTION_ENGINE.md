@@ -1,22 +1,23 @@
-# FlowPilot — Execution Engine Specification & Runtime Model
+# FlowPilot — Execution Engine Specification & Runtime Architecture
 
 > **Module:** Core Execution Engine  
 > **Environment:** Node.js 18+ (Pure TypeScript runtime)  
-> **Testing Harness:** Vitest unit & integration tests  
-> **Status:** Specification & Reference Implementation (Phase 1)  
+> **Testing Harness:** Vitest unit & integration tests (36/36 passing)  
+> **Status:** Verified Production Implementation (Phase 4)  
 
 ---
 
 ## 1. Overview & Execution Philosophy
 
-The **FlowPilot Execution Engine** is a deterministic, event-driven runtime responsible for compiling a visual workflow DAG into a safe, traceable execution plan. 
+The **FlowPilot Execution Engine** is a deterministic, event-driven runtime responsible for compiling a visual workflow DAG into a safe, traceable background execution plan.
 
 ### Core Tenet: True Decoupling
-Visual nodes and canvas edges are merely **declarative metadata**. The execution engine runs independently of the browser DOM or React component lifecycle. A workflow can be executed via:
+Visual nodes and canvas edges are merely **declarative metadata**. The execution engine runs independently of the browser DOM or React component lifecycle. Workflows execute asynchronously in background workers with zero reliance on the client session remaining open. A workflow can be executed via:
 1. Direct backend API call (`/api/v1/workflows/:id/execute`).
-2. Webhook trigger (`/api/v1/webhooks/:token`).
-3. Scheduled cron daemon.
-4. CLI or automated Vitest test suite.
+2. Canvas Test Run button with live console polling.
+3. Inbound Webhook trigger (`/api/v1/workflows/:id/webhook`).
+4. Automated background job queue scheduler.
+5. Automated Vitest test suite (`tests/phase4_execution.test.ts`).
 
 ---
 

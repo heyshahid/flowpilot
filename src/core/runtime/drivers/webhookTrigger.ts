@@ -9,3 +9,4 @@ export const webhookTriggerDriver: NodeDriver = async (context, resolvedConfig) 
     timestamp: new Date().toISOString(),
   };
 };
+

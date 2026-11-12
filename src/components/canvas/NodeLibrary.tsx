@@ -57,11 +57,10 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onAddNode }) => {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-2 py-0.5 rounded capitalize transition-colors ${
-                selectedCategory === cat
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className={`px-2 py-0.5 rounded capitalize transition-colors ${selectedCategory === cat
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
             >
               {cat}
             </button>

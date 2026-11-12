@@ -9,3 +9,4 @@ export const manualTriggerDriver: NodeDriver = async (context, resolvedConfig) =
     timestamp: new Date().toISOString(),
   };
 };
+

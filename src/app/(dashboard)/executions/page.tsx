@@ -26,6 +26,18 @@ export default function ExecutionsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Auto-open inspection drawer if URL has ?inspect=id
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const inspectId = urlParams.get('inspect');
+      if (inspectId) {
+        setSelectedExecutionId(inspectId);
+        setIsConsoleOpen(true);
+      }
+    }
+  }, []);
+
   const fetchExecutions = useCallback(async () => {
     setLoading(true);
     try {

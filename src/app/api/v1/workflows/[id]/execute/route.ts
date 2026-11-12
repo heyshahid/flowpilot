@@ -21,8 +21,16 @@ export async function POST(
 
     try {
       const body = await req.json();
-      payload = body.payload || {};
-      waitForCompletion = Boolean(body.wait || body.sync);
+      if (body && typeof body === 'object') {
+        if ('payload' in body && typeof body.payload === 'object' && body.payload !== null) {
+          payload = body.payload as Record<string, unknown>;
+        } else {
+          // If body is passed directly as payload, remove wait/sync control keys
+          const { wait, sync, ...rest } = body as Record<string, unknown>;
+          payload = rest;
+        }
+        waitForCompletion = Boolean((body as Record<string, unknown>).wait || (body as Record<string, unknown>).sync);
+      }
     } catch {
       // Empty payload is permitted
     }

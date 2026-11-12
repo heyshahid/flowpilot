@@ -93,3 +93,4 @@ The `action.httpRequest` node implements Zero-Trust network validation via `vali
 - **Concurrency Control:** Configurable worker concurrency limits (default 5 concurrent executions).
 - **Graceful Cancellation:** Active executions maintain an `AbortController` map. Calling `/api/v1/executions/:id/cancel` halts in-flight HTTP requests and timers immediately.
 - **Retry Manager:** Exponential backoff calculation with jitter for resilient automated recovery.
+

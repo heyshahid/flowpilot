@@ -19,3 +19,4 @@ export const sendNotificationDriver: NodeDriver = async (_context, resolvedConfi
     timestamp: new Date().toISOString(),
   };
 };
+
