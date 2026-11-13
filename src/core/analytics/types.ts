@@ -60,25 +60,91 @@ export interface TimeSeriesResult {
   boundaryRule: '[start, end) (inclusive start, exclusive end)';
 }
 
+export type DiagnosticStatus =
+  | 'HEALTHY'
+  | 'SLOW'
+  | 'UNRELIABLE'
+  | 'NEEDS_ATTENTION'
+  | 'INSUFFICIENT_DATA'
+  | 'UNAVAILABLE';
+
+export type RecommendationEvidenceLevel = 'STRONG' | 'MODERATE' | 'SUGGESTION';
+
+export interface OptimizationRecommendation {
+  id: string;
+  ruleId: string;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  workflowId: string;
+  issue: string;
+  supportingMeasurements: {
+    nodeMeanDurationMs?: number | null;
+    workflowMeanDurationMs?: number | null;
+    durationContributionRatio?: number | null;
+    failureRatePercent?: number | null;
+    retryCount?: number;
+    sampleSize: number;
+    timeoutCount?: number;
+  };
+  suggestedAction: string;
+  evidenceLevel: RecommendationEvidenceLevel;
+  relevantExecutionIds: string[];
+}
+
+export interface NodeExecutionTraceDetail {
+  executionId: string;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  status: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs: number;
+  attempts: number;
+  retryCount: number;
+  error?: string;
+}
+
 export interface NodePerformanceMetric {
   nodeId: string;
   nodeType: string;
   nodeName: string;
   executionCount: number;
+  totalExecutionAttempts: number;
+  uniqueWorkflowExecutions: number;
   successCount: number;
   failureCount: number;
+  skippedCount?: number;
   failureRatePercent: number | null;
   meanDurationMs: number | null;
   medianDurationMs: number | null;
+  minDurationMs?: number | null;
+  maxDurationMs?: number | null;
   durationContributionRatio: number | null; // node mean duration / workflow mean duration
   totalRetryCount: number;
+  timeoutCount?: number;
   errorCategories: Record<string, number>;
   sampleSizeAdequate: boolean; // Minimum 5 executions required
+  diagnosticStatus: DiagnosticStatus;
+  diagnosticReasons?: string[];
+  evidenceLevel?: RecommendationEvidenceLevel;
   warnings: {
     highDuration: boolean; // exceeds 40% of workflow duration
     highFailureRate: boolean; // exceeds 15% failure rate
   };
   bottleneckRankingScore: number; // Ranking metric for sorting only
+  lastObservedAt?: string | null;
+  recentTraces?: NodeExecutionTraceDetail[];
+}
+
+export interface WorkflowNodeDiagnosticsResult {
+  workflowId: string;
+  workflowName: string;
+  workspaceId: string;
+  totalExecutionsSampled: number;
+  nodeDiagnostics: NodePerformanceMetric[];
+  recommendations: OptimizationRecommendation[];
 }
 
 export interface WorkflowPerformanceReport {
@@ -89,6 +155,7 @@ export interface WorkflowPerformanceReport {
   durationTrend: TimeSeriesResult;
   nodeMetrics: NodePerformanceMetric[];
   mostProblematicNodes: NodePerformanceMetric[];
+  recommendations?: OptimizationRecommendation[];
 }
 
 export interface WorkflowAnalyticsSummaryItem {

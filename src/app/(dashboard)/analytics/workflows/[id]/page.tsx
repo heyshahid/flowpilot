@@ -26,6 +26,8 @@ import {
 import { DateRangeSelector } from '@/components/analytics/DateRangeSelector';
 import { SummaryCard } from '@/components/analytics/SummaryCard';
 import { TimeSeriesChart } from '@/components/analytics/TimeSeriesChart';
+import { NodePerformanceTable } from '@/components/analytics/NodePerformanceTable';
+import { OptimizationRecommendationsPanel } from '@/components/analytics/OptimizationRecommendationsPanel';
 import { formatDuration } from '@/core/analytics/metricDefinitions';
 
 interface ExecutionRow {
@@ -306,6 +308,17 @@ export default function WorkflowAnalyticsDetailPage({
               title={`${report.workflowName} — Execution Activity`}
             />
           )}
+
+          {/* Node Performance Diagnostics Table */}
+          <NodePerformanceTable
+            nodes={report.nodeMetrics}
+            workflowId={id}
+          />
+
+          {/* Evidence-Backed Optimization Recommendations */}
+          <OptimizationRecommendationsPanel
+            recommendations={report.recommendations || []}
+          />
 
           {/* Paginated Execution History Table */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">

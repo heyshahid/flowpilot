@@ -16,6 +16,7 @@ import {
   TimeWindow,
   WorkflowPerformanceReport,
   WorkflowAnalyticsSummaryItem,
+  WorkflowNodeDiagnosticsResult,
   AIUsageMetricsSummary,
 } from './types';
 import {
@@ -206,6 +207,12 @@ export class AnalyticsService {
       (m) => m.warnings.highDuration || m.warnings.highFailureRate
     );
 
+    const recommendations = BottleneckAnalyzer.generateRecommendations(
+      executions,
+      nodeMetrics,
+      workflowId
+    );
+
     return {
       workflowId,
       workflowName,
@@ -214,7 +221,32 @@ export class AnalyticsService {
       durationTrend,
       nodeMetrics,
       mostProblematicNodes,
+      recommendations,
     };
+  }
+
+  /**
+   * Retrieves comprehensive node diagnostics and optimization recommendations for a workflow.
+   */
+  public async getWorkflowNodeDiagnostics(
+    workflowId: string,
+    options: AnalyticsQueryOptions
+  ): Promise<WorkflowNodeDiagnosticsResult> {
+    const workflow = await workflowStore.getById(workflowId, options.workspaceId);
+    const workflowName = workflow?.name || `Workflow ${workflowId}`;
+
+    const queryOptions: AnalyticsQueryOptions = {
+      ...options,
+      workflowId,
+    };
+
+    const { executions } = await this.getFilteredExecutions(queryOptions);
+    return BottleneckAnalyzer.diagnoseWorkflow(
+      workflowId,
+      workflowName,
+      options.workspaceId,
+      executions
+    );
   }
 
   /**
