@@ -169,6 +169,12 @@ export class AIUsageStore {
       recentLogs: logs.slice(0, 20),
     };
   }
+
+  public getRawLogs(workspaceId?: string): AIUsageLogEntry[] {
+    this.load();
+    if (!workspaceId) return [...this.cache];
+    return this.cache.filter((l) => (l.workspaceId || 'ws_default') === workspaceId);
+  }
 }
 
 export const aiUsageStore = AIUsageStore.getInstance();
