@@ -91,6 +91,7 @@ export class VersionStore {
     const versionRecord: WorkflowVersion = {
       id,
       workflowId,
+      workspaceId: workflow.workspaceId || 'ws_default',
       versionNumber: nextVersionNumber,
       name: workflow.name,
       description: workflow.description,

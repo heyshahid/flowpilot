@@ -11,6 +11,12 @@ export interface WorkflowRecord extends WorkflowGraph {
   successCount: number;
   failureCount: number;
   lastExecutedAt?: string;
+  workspaceId?: string;
+  version?: number;
+  createdBy?: string;
+  createdByName?: string;
+  lastModifiedBy?: string;
+  lastModifiedByName?: string;
 }
 
 const STORAGE_KEY = 'flowpilot_workflows_v1';
@@ -21,6 +27,12 @@ export const SEED_WORKFLOWS: WorkflowRecord[] = [
     name: 'Inbound Lead Qualification & VIP Routing',
     description: 'Ingests webhook leads, checks budget threshold, and notifies VIP sales reps.',
     status: 'active',
+    workspaceId: 'ws_default',
+    version: 1,
+    createdBy: 'usr_owner',
+    createdByName: 'Shahid Akram',
+    lastModifiedBy: 'usr_owner',
+    lastModifiedByName: 'Shahid Akram',
     createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
     updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
     executionCount: 142,
@@ -84,6 +96,12 @@ export const SEED_WORKFLOWS: WorkflowRecord[] = [
     name: 'Customer Order Enrichment API',
     description: 'Fetches CRM profile for new purchase events and syncs delivery status.',
     status: 'draft',
+    workspaceId: 'ws_default',
+    version: 1,
+    createdBy: 'usr_owner',
+    createdByName: 'Shahid Akram',
+    lastModifiedBy: 'usr_owner',
+    lastModifiedByName: 'Shahid Akram',
     createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
     updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
     executionCount: 28,
@@ -132,6 +150,12 @@ export const SEED_WORKFLOWS: WorkflowRecord[] = [
     name: 'Home-grown CRM System',
     description: 'Universal Webhook → HTTP GET Record → Branch on Expression → Send Email / Slack Notification.',
     status: 'active',
+    workspaceId: 'ws_default',
+    version: 1,
+    createdBy: 'usr_owner',
+    createdByName: 'Shahid Akram',
+    lastModifiedBy: 'usr_owner',
+    lastModifiedByName: 'Shahid Akram',
     createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
     updatedAt: new Date(Date.now() - 1800000).toISOString(),
     executionCount: 89,
@@ -215,34 +239,80 @@ class WorkflowStore {
     return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
   }
 
-  public getAll(): WorkflowRecord[] {
+  public getAll(workspaceId?: string): WorkflowRecord[] {
+    let list: WorkflowRecord[];
     if (!this.isClient()) {
-      return this.inMemoryWorkflows;
-    }
-
-    try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_WORKFLOWS));
-        return SEED_WORKFLOWS;
+      list = this.inMemoryWorkflows;
+    } else {
+      try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (!data) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_WORKFLOWS));
+          list = SEED_WORKFLOWS;
+        } else {
+          list = JSON.parse(data) as WorkflowRecord[];
+        }
+      } catch {
+        list = this.inMemoryWorkflows;
       }
-      return JSON.parse(data) as WorkflowRecord[];
-    } catch {
-      return this.inMemoryWorkflows;
     }
+
+    if (workspaceId) {
+      return list.filter((w) => (w.workspaceId || 'ws_default') === workspaceId);
+    }
+    return list;
   }
 
-  public getById(id: string): WorkflowRecord | null {
+  public getById(id: string, workspaceId?: string): WorkflowRecord | null {
     const list = this.getAll();
-    return list.find((w) => w.id === id) || null;
+    const wf = list.find((w) => w.id === id) || null;
+    if (wf && workspaceId && (wf.workspaceId || 'ws_default') !== workspaceId) {
+      return null;
+    }
+    return wf;
   }
 
-  public save(workflow: WorkflowRecord): WorkflowRecord {
+  public save(
+    workflow: WorkflowRecord,
+    options?: {
+      expectedVersion?: number;
+      actor?: { id: string; name: string };
+      workspaceId?: string;
+    }
+  ): WorkflowRecord {
     const list = this.getAll();
     const index = list.findIndex((w) => w.id === workflow.id);
+    const existing = index >= 0 ? list[index] : null;
+
+    // Check workspace isolation if provided
+    if (options?.workspaceId && existing) {
+      const existingWs = existing.workspaceId || 'ws_default';
+      if (existingWs !== options.workspaceId) {
+        throw new Error(`Cross-workspace access denied: Workflow "${workflow.id}" belongs to "${existingWs}".`);
+      }
+    }
+
+    // Optimistic locking conflict check
+    if (options?.expectedVersion !== undefined && existing && existing.version !== undefined) {
+      if (existing.version !== options.expectedVersion) {
+        throw new Error(
+          `Conflict: Workflow was updated by another user (current version: ${existing.version}, expected: ${options.expectedVersion}). Please reload the workflow.`
+        );
+      }
+    }
+
+    const nextVersion = (existing?.version || 1) + 1;
+    const now = new Date().toISOString();
+
     const updated: WorkflowRecord = {
       ...workflow,
-      updatedAt: new Date().toISOString(),
+      workspaceId: workflow.workspaceId || existing?.workspaceId || options?.workspaceId || 'ws_default',
+      version: nextVersion,
+      createdBy: workflow.createdBy || existing?.createdBy || options?.actor?.id || 'usr_owner',
+      createdByName: workflow.createdByName || existing?.createdByName || options?.actor?.name || 'Shahid Akram',
+      lastModifiedBy: options?.actor?.id || workflow.lastModifiedBy || 'usr_owner',
+      lastModifiedByName: options?.actor?.name || workflow.lastModifiedByName || 'Shahid Akram',
+      updatedAt: now,
     };
 
     let nextList: WorkflowRecord[];
@@ -257,7 +327,13 @@ class WorkflowStore {
     return updated;
   }
 
-  public create(params: { name: string; description?: string; triggerType?: string }): WorkflowRecord {
+  public create(params: {
+    name: string;
+    description?: string;
+    triggerType?: string;
+    workspaceId?: string;
+    actor?: { id: string; name: string };
+  }): WorkflowRecord {
     const id = `wf_${Math.random().toString(36).substring(2, 9)}`;
     const triggerType = params.triggerType || 'trigger.webhook';
 
@@ -278,6 +354,12 @@ class WorkflowStore {
       name: params.name.trim() || 'Untitled Workflow',
       description: params.description?.trim() || '',
       status: 'draft',
+      workspaceId: params.workspaceId || 'ws_default',
+      version: 1,
+      createdBy: params.actor?.id || 'usr_owner',
+      createdByName: params.actor?.name || 'Shahid Akram',
+      lastModifiedBy: params.actor?.id || 'usr_owner',
+      lastModifiedByName: params.actor?.name || 'Shahid Akram',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       executionCount: 0,
@@ -292,8 +374,11 @@ class WorkflowStore {
     return newWorkflow;
   }
 
-  public duplicate(id: string): WorkflowRecord | null {
-    const original = this.getById(id);
+  public duplicate(
+    id: string,
+    options?: { workspaceId?: string; actor?: { id: string; name: string } }
+  ): WorkflowRecord | null {
+    const original = this.getById(id, options?.workspaceId);
     if (!original) return null;
 
     const copyId = `wf_${Math.random().toString(36).substring(2, 9)}`;
@@ -302,6 +387,12 @@ class WorkflowStore {
       id: copyId,
       name: `${original.name} (Copy)`,
       status: 'draft',
+      workspaceId: options?.workspaceId || original.workspaceId || 'ws_default',
+      version: 1,
+      createdBy: options?.actor?.id || 'usr_owner',
+      createdByName: options?.actor?.name || 'Shahid Akram',
+      lastModifiedBy: options?.actor?.id || 'usr_owner',
+      lastModifiedByName: options?.actor?.name || 'Shahid Akram',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       executionCount: 0,
@@ -313,6 +404,24 @@ class WorkflowStore {
     const list = this.getAll();
     this.persist([copy, ...list]);
     return copy;
+  }
+
+  public transferOwnership(
+    id: string,
+    newOwnerId: string,
+    newOwnerName: string,
+    workspaceId?: string
+  ): WorkflowRecord {
+    const original = this.getById(id, workspaceId);
+    if (!original) {
+      throw new Error(`Workflow "${id}" not found.`);
+    }
+
+    original.createdBy = newOwnerId;
+    original.createdByName = newOwnerName;
+    original.updatedAt = new Date().toISOString();
+
+    return this.save(original);
   }
 
   public rename(id: string, newName: string): WorkflowRecord | null {
@@ -342,17 +451,22 @@ class WorkflowStore {
     return this.save(updated);
   }
 
-  public delete(id: string): boolean {
+  public delete(id: string, workspaceId?: string): boolean {
     const list = this.getAll();
-    const filtered = list.filter((w) => w.id !== id);
-    if (filtered.length === list.length) return false;
+    const target = list.find((w) => w.id === id);
+    if (!target) return false;
 
+    if (workspaceId && (target.workspaceId || 'ws_default') !== workspaceId) {
+      throw new Error(`Cross-workspace delete denied: Workflow belongs to "${target.workspaceId}".`);
+    }
+
+    const filtered = list.filter((w) => w.id !== id);
     this.persist(filtered);
     return true;
   }
 
-  public getDashboardStats() {
-    const list = this.getAll();
+  public getDashboardStats(workspaceId?: string) {
+    const list = this.getAll(workspaceId);
     const totalWorkflows = list.length;
     const activeWorkflows = list.filter((w) => w.status === 'active').length;
     const successfulRuns = list.reduce((acc, curr) => acc + (curr.successCount || 0), 0);

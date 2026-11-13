@@ -27,3 +27,4 @@ As FlowPilot connects to external Large Language Models, strict security boundar
 - Per-request timeouts (45 seconds) backed by native `AbortController`.
 - Maximum token limits (2,500 max output tokens for workflow generation).
 - Single-workspace isolation: conversation history stored in `.data/ai_conversations.json` is scoped by `workspaceId`.
+

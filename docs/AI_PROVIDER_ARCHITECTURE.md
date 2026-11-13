@@ -51,3 +51,4 @@ flowchart TD
 | **Anthropic** | `claude-3-5-sonnet-latest` | 200,000 tokens | $0.00300 | $0.01500 |
 | **Anthropic** | `claude-3-haiku-20240307` | 200,000 tokens | $0.00025 | $0.00125 |
 | **FlowPilot Mock** | `flowpilot-mock-v1` | 128,000 tokens | $0.00000 | $0.00000 |
+

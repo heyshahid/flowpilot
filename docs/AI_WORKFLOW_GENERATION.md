@@ -37,3 +37,4 @@ flowchart TD
 - **Zod Config Enforcement:** Node configurations are verified against their registered Zod schemas (`configSchema.safeParse(config)`).
 - **DAG Integrity:** `validateWorkflowGraph()` ensures the graph contains at least one trigger node, has no cycles, and edges link to valid port handles (`true`, `false`, `default`).
 - **Credential Dependency Verification:** If a generated workflow includes nodes requiring external services (`slack`, `google_sheets`, `smtp`, `telegram`), the system queries `credentialStore.listSync()` and issues prominent warnings if active credentials do not exist.
+

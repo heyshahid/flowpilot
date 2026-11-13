@@ -57,3 +57,4 @@ export interface AIProviderAdapter {
   testConnection(apiKey?: string): Promise<{ success: boolean; message: string; latencyMs: number }>;
   chat(messages: AIMessage[], options?: AIChatOptions, apiKey?: string): Promise<AIChatResponse>;
 }
+

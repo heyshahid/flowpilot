@@ -35,9 +35,9 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
       const encrypted = CredentialVault.encrypt(secret);
       const [iv, tag, ciphertext] = encrypted.split(':');
 
-      // Tamper with the ciphertext
-      const tamperedCiphertext = ciphertext.substring(0, ciphertext.length - 2) + '00';
-      const tampered = `${iv}:${tag}:${tamperedCiphertext}`;
+      // Tamper with the authentication tag or ciphertext
+      const tamperedTag = (tag.startsWith('aa') ? 'bb' : 'aa') + tag.substring(2);
+      const tampered = `${iv}:${tamperedTag}:${ciphertext}`;
 
       expect(() => {
         CredentialVault.decrypt(tampered);

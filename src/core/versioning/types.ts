@@ -3,6 +3,7 @@ import { WorkflowNode, WorkflowEdge } from '../types/workflow';
 export interface WorkflowVersion {
   id: string; // e.g. ver_abc123
   workflowId: string;
+  workspaceId?: string;
   versionNumber: number; // e.g. 1, 2, 3...
   name: string;
   description?: string;

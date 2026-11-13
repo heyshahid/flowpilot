@@ -6,6 +6,7 @@ export interface ScheduleConfig {
   id: string;
   workflowId: string;
   workflowName: string;
+  workspaceId?: string;
   name: string;
   description?: string;
   type: ScheduleType;

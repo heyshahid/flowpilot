@@ -45,3 +45,4 @@ All features are backed by automated tests (**92 / 92 tests passing** across 7 t
 - Dedicated AI Assistant dashboard (`/ai-assistant` and `/assistant`) with prompt starters, provider badge, interactive node flow cards, and one-click "Save & Open in Canvas".
 - In-canvas AI Assistant Drawer (`AiCanvasAssistantDrawer.tsx`) accessible via the canvas header "AI Copilot" button, supporting in-situ graph modifications, explanations, and optimizations.
 - Vitest suite `tests/phase7_ai.test.ts` with 18 comprehensive tests. Total test suite: 92 passing tests.
+

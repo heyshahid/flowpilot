@@ -236,6 +236,10 @@ export class ExecutionStore {
     // Sort by startedAt descending (most recent first)
     list.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
 
+    if (filter?.workspaceId) {
+      list = list.filter((r) => (r.workspaceId || 'ws_default') === filter.workspaceId);
+    }
+
     if (filter?.workflowId) {
       list = list.filter((r) => r.workflowId === filter.workflowId);
     }

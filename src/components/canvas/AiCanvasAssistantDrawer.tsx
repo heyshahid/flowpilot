@@ -151,9 +151,8 @@ export const AiCanvasAssistantDrawer: React.FC<AiCanvasAssistantDrawerProps> = (
       <div className="flex border-b border-slate-200 bg-slate-50 p-1 gap-1">
         <button
           onClick={() => setActiveTab('prompt')}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-            activeTab === 'prompt' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-          }`}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'prompt' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
         >
           Modify Graph
         </button>
@@ -162,9 +161,8 @@ export const AiCanvasAssistantDrawer: React.FC<AiCanvasAssistantDrawerProps> = (
             setActiveTab('explain');
             if (!explanation) handleExplain();
           }}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-            activeTab === 'explain' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-          }`}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'explain' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
         >
           Explain
         </button>
@@ -173,9 +171,8 @@ export const AiCanvasAssistantDrawer: React.FC<AiCanvasAssistantDrawerProps> = (
             setActiveTab('optimize');
             if (!optimizations) handleOptimize();
           }}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-            activeTab === 'optimize' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-          }`}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'optimize' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
         >
           Optimize
         </button>

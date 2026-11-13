@@ -77,3 +77,4 @@ Return STRICT JSON matching the structure:
     };
   }
 }
+

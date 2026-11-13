@@ -19,7 +19,9 @@ import {
   ChevronsRight,
   ShieldCheck,
   Clock,
+  Users,
 } from 'lucide-react';
+import { WorkspaceSelector } from './WorkspaceSelector';
 
 interface NavItem {
   name: string;
@@ -37,6 +39,8 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Executions', href: '/executions', icon: Activity },
   { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'AI Assistant', href: '/ai-assistant', icon: Bot, badge: 'AI' },
+  { name: 'Team', href: '/team', icon: Users },
+  { name: 'Audit Logs', href: '/audit-logs', icon: ShieldCheck },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
@@ -83,27 +87,7 @@ export const AppSidebar: React.FC = () => {
       </div>
 
       {/* Workspace Selector */}
-      {!collapsed ? (
-        <div className="px-3 py-3 border-b border-slate-100">
-          <div className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200/80 p-2 text-xs">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-5 h-5 rounded bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0">
-                S
-              </div>
-              <span className="font-semibold text-slate-800 truncate">
-                Shahid Growth Lab
-              </span>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          </div>
-        </div>
-      ) : (
-        <div className="p-2 border-b border-slate-100 flex justify-center">
-          <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs" title="Shahid Growth Lab">
-            S
-          </div>
-        </div>
-      )}
+      <WorkspaceSelector collapsed={collapsed} />
 
       {/* Main Navigation */}
       <nav className="flex-1 space-y-1 p-3 overflow-y-auto">

@@ -41,3 +41,4 @@ interface AIUsageLogEntry {
   - `byProvider`: Cost and request distribution per provider.
   - `byModel`: Cost and request distribution per model.
   - `recentLogs`: Last 20 operation traces.
+

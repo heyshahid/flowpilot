@@ -3,7 +3,7 @@
 > **Visual AI Workflow Automation Platform**  
 > *Build workflows visually. Connect apps. Automate repetitive work.*
 
-[![Tests](https://img.shields.io/badge/tests-92%20passed-success)](https://github.com/heyshahid/flowpilot)
+[![Tests](https://img.shields.io/badge/tests-111%20passed-success)](https://github.com/heyshahid/flowpilot)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.1-black)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -103,7 +103,7 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 - [x] **Phase 5: Core Integrations & Production Webhooks (Webhooks, HTTP API, SMTP, Google Sheets, Slack, Telegram, AES-256-GCM Vault)**
 - [x] **Phase 6: Advanced Automation & Scheduling (Cron Parser, Intervals, Delays, Loops, Multi-Branching, Merge, Sub-Workflows, Version Snapshots & Rollback)**
 - [x] **Phase 7: AI Workflow Assistant (Natural Language to Workflow DAG, Smart Configuration, Explainer, Error Assistant & Multi-Provider Adapters)**
-- [ ] **Phase 8: Multi-Tenant Team Workspaces & Access Control**
+- [x] **Phase 8: Multi-Tenant Team Workspaces & Access Control (Workspace Isolation, Team Invitations, RBAC, Shared Workflows, Optimistic Locking, Ownership Transfer & Audit Logs)**
 - [ ] **Phase 9: Analytics, Optimization & Metrics**
 - [ ] **Phase 10: Security Hardening & Production Launch**
 

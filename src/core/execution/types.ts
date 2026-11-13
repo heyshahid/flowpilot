@@ -43,6 +43,7 @@ export interface WorkflowExecutionRecord {
   id: string;
   workflowId: string;
   workflowName: string;
+  workspaceId?: string;
   status: WorkflowExecutionStatus;
   trigger: {
     type: string;
@@ -66,6 +67,7 @@ export interface WorkflowExecutionRecord {
 }
 
 export interface ExecutionFilter {
+  workspaceId?: string;
   workflowId?: string;
   status?: WorkflowExecutionStatus;
   search?: string;

@@ -6,6 +6,7 @@ export interface WebhookConfig {
   id: string;
   workflowId: string;
   workflowName: string;
+  workspaceId?: string;
   name: string;
   token: string;
   secret: string;
@@ -196,8 +197,12 @@ export class WebhookStore {
     return null;
   }
 
-  public async list(): Promise<WebhookConfig[]> {
-    return Array.from(this.configs.values()).sort(
+  public async list(workspaceId?: string): Promise<WebhookConfig[]> {
+    let list = Array.from(this.configs.values());
+    if (workspaceId) {
+      list = list.filter((c) => (c.workspaceId || 'ws_default') === workspaceId);
+    }
+    return list.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   }

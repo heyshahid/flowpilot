@@ -13,6 +13,8 @@ export interface CredentialRecord {
   createdAt: string;
   updatedAt: string;
   lastVerifiedAt?: string;
+  workspaceId?: string;
+  createdBy?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), '.data');
@@ -131,6 +133,8 @@ export class CredentialStore {
     integrationId: string;
     type: CredentialRecord['type'];
     data: Record<string, any>;
+    workspaceId?: string;
+    createdBy?: string;
   }): Promise<CredentialRecord> {
     const id = `cred_${Math.random().toString(36).substring(2, 10)}`;
     const now = new Date().toISOString();
@@ -161,6 +165,8 @@ export class CredentialStore {
       encryptedData,
       maskedPreview,
       status: 'untested',
+      workspaceId: params.workspaceId || 'ws_default',
+      createdBy: params.createdBy || 'usr_owner',
       createdAt: now,
       updatedAt: now,
     };
@@ -170,13 +176,23 @@ export class CredentialStore {
     return record;
   }
 
-  public async getById(id: string): Promise<CredentialRecord | null> {
-    return this.inMemoryCredentials.get(id) || null;
+  public async getById(id: string, workspaceId?: string): Promise<CredentialRecord | null> {
+    const cred = this.inMemoryCredentials.get(id) || null;
+    if (cred && workspaceId && (cred.workspaceId || 'ws_default') !== workspaceId) {
+      return null;
+    }
+    return cred;
   }
 
-  public async getDecryptedData<T = Record<string, any>>(id: string): Promise<T | null> {
-    const record = await this.getById(id);
+  public async getDecryptedData<T = Record<string, any>>(
+    id: string,
+    options?: { workspaceId?: string; allowDecrypt?: boolean }
+  ): Promise<T | null> {
+    const record = await this.getById(id, options?.workspaceId);
     if (!record) return null;
+    if (options?.allowDecrypt === false) {
+      throw new Error(`Unauthorized: Role lacks permission to decrypt credential secrets.`);
+    }
     return CredentialVault.decrypt<T>(record.encryptedData);
   }
 
@@ -190,19 +206,28 @@ export class CredentialStore {
     }
   }
 
-  public listSync(filter?: { integrationId?: string }): CredentialRecord[] {
+  public listSync(filter?: { integrationId?: string; workspaceId?: string }): CredentialRecord[] {
     let list = Array.from(this.inMemoryCredentials.values());
+    if (filter?.workspaceId) {
+      list = list.filter((c) => (c.workspaceId || 'ws_default') === filter.workspaceId);
+    }
     if (filter?.integrationId) {
       list = list.filter((c) => c.integrationId === filter.integrationId);
     }
     return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
-  public async list(filter?: { integrationId?: string }): Promise<CredentialRecord[]> {
+  public async list(filter?: { integrationId?: string; workspaceId?: string }): Promise<CredentialRecord[]> {
     return this.listSync(filter);
   }
 
-  public async delete(id: string): Promise<boolean> {
+  public async delete(id: string, workspaceId?: string): Promise<boolean> {
+    if (workspaceId) {
+      const existing = this.inMemoryCredentials.get(id);
+      if (existing && (existing.workspaceId || 'ws_default') !== workspaceId) {
+        throw new Error(`Cross-workspace delete denied: Credential belongs to "${existing.workspaceId}".`);
+      }
+    }
     const deleted = this.inMemoryCredentials.delete(id);
     if (deleted) {
       this.persist();

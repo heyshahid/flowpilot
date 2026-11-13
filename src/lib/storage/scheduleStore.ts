@@ -137,8 +137,11 @@ export class ScheduleStore {
     return this.inMemorySchedules.get(id) || null;
   }
 
-  public async list(filter?: { workflowId?: string; status?: ScheduleStatus }): Promise<ScheduleConfig[]> {
+  public async list(filter?: { workflowId?: string; status?: ScheduleStatus; workspaceId?: string }): Promise<ScheduleConfig[]> {
     let list = Array.from(this.inMemorySchedules.values());
+    if (filter?.workspaceId) {
+      list = list.filter((s) => (s.workspaceId || 'ws_default') === filter.workspaceId);
+    }
     if (filter?.workflowId) {
       list = list.filter((s) => s.workflowId === filter.workflowId);
     }
