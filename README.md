@@ -3,7 +3,7 @@
 > **Visual AI Workflow Automation Platform**  
 > *Build workflows visually. Connect apps. Automate repetitive work.*
 
-[![Tests](https://img.shields.io/badge/tests-53%20passed-success)](https://github.com/heyshahid/flowpilot)
+[![Tests](https://img.shields.io/badge/tests-74%20passed-success)](https://github.com/heyshahid/flowpilot)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.1-black)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -77,6 +77,12 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 - [Standard Node Catalog & Schemas](./docs/NODE_SPECIFICATIONS.md)
 - [Phase 4 Implementation Report](./docs/PHASE_4_IMPLEMENTATION.md)
 - [Phase 5 Implementation Report](./docs/PHASE_5_IMPLEMENTATION.md)
+- [Phase 6 Implementation Report](./docs/PHASE_6_IMPLEMENTATION.md)
+- [Scheduling Engine & Cron Specification](./docs/SCHEDULING_ENGINE.md)
+- [Advanced Logic Nodes (Delay, Wait Until, Loop, Switch, Merge)](./docs/ADVANCED_NODES.md)
+- [Sub-Workflows & Modular Composition](./docs/SUB_WORKFLOWS.md)
+- [Workflow Versioning & Snapshot Rollback](./docs/WORKFLOW_VERSIONING.md)
+- [Execution Limits & Safety Guardrails](./docs/EXECUTION_LIMITS.md)
 - [Integration Architecture Specification](./docs/INTEGRATION_ARCHITECTURE.md)
 - [Production Webhook Security Model](./docs/WEBHOOK_SECURITY.md)
 - [OAuth & Third-Party Connection Guide](./docs/OAUTH_CONFIGURATION.md)
@@ -90,7 +96,7 @@ Detailed engineering documentation is available in the [`docs/`](./docs) directo
 - [x] **Phase 3: React Flow Visual Canvas & Dynamic Node Configuration Drawer**
 - [x] **Phase 4: Backend Workflow Execution Engine & Worker Integration**
 - [x] **Phase 5: Core Integrations & Production Webhooks (Webhooks, HTTP API, SMTP, Google Sheets, Slack, Telegram, AES-256-GCM Vault)**
-- [ ] **Phase 6: Advanced Automation (Cron Schedules, Delays, Retries)**
+- [x] **Phase 6: Advanced Automation & Scheduling (Cron Parser, Intervals, Delays, Loops, Multi-Branching, Merge, Sub-Workflows, Version Snapshots & Rollback)**
 - [ ] **Phase 7: AI Workflow Assistant (Natural Language to Workflow DAG)**
 - [ ] **Phase 8: Multi-Tenant Team Workspaces & Access Control**
 - [ ] **Phase 9: Analytics, Optimization & Metrics**

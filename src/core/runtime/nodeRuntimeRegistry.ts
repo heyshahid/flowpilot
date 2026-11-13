@@ -8,6 +8,11 @@ import { sendEmailDriver } from './drivers/sendEmail';
 import { sendNotificationDriver } from './drivers/sendNotification';
 import { textGenerationDriver } from './drivers/textGeneration';
 import { delayDriver } from './drivers/delay';
+import { waitUntilDriver } from './drivers/waitUntil';
+import { loopDriver } from './drivers/loop';
+import { advancedConditionDriver } from './drivers/advancedCondition';
+import { mergeDriver } from './drivers/merge';
+import { subWorkflowDriver } from './drivers/subWorkflow';
 import { googleSheetsAdapter } from '../integrations/adapters/googleSheetsAdapter';
 import { slackAdapter } from '../integrations/adapters/slackAdapter';
 import { telegramAdapter } from '../integrations/adapters/telegramAdapter';
@@ -85,14 +90,17 @@ export class NodeRuntimeRegistry {
       return telegramAdapter.executeAction('sendMessage', resolvedConfig, credentials || undefined);
     });
 
-    // Logic
+    // Logic & Advanced Automation (Phase 6)
     this.registerDriver('logic.ifElse', ifElseDriver);
     this.registerDriver('logic.filter', ifElseDriver);
     this.registerDriver('logic.delay', delayDriver);
-    this.registerDriver('logic.merge', async (_context, resolvedConfig) => ({
-      merged: true,
-      data: resolvedConfig,
-    }));
+    this.registerDriver('logic.waitUntil', waitUntilDriver);
+    this.registerDriver('logic.loop', loopDriver);
+    this.registerDriver('data.loop', loopDriver);
+    this.registerDriver('logic.switch', advancedConditionDriver);
+    this.registerDriver('logic.advancedCondition', advancedConditionDriver);
+    this.registerDriver('logic.merge', mergeDriver);
+    this.registerDriver('action.subWorkflow', subWorkflowDriver);
 
     // Data
     this.registerDriver('data.transform', dataTransformDriver);

@@ -121,6 +121,30 @@ export const MergeSchema = z.object({
   mode: z.enum(['wait_all', 'pass_through']).default('wait_all'),
 });
 
+export const WaitUntilSchema = z.object({
+  targetDateTime: z.string().min(1, 'Target date/time is required'),
+  timeoutMs: z.number().default(15000),
+});
+
+export const LoopSchema = z.object({
+  items: z.string().default('[]'),
+  batchSize: z.number().default(10),
+  maxIterations: z.number().default(100),
+  mode: z.enum(['sequential', 'parallel']).default('sequential'),
+});
+
+export const SwitchSchema = z.object({
+  value: z.string().default(''),
+  cases: z.array(z.object({ case: z.string(), handle: z.string() })).default([]),
+  defaultHandle: z.string().default('default'),
+});
+
+export const SubWorkflowSchema = z.object({
+  subWorkflowId: z.string().min(1, 'Target sub-workflow ID is required'),
+  inputData: z.record(z.unknown()).default({}),
+  waitForCompletion: z.boolean().default(true),
+});
+
 // -----------------------------------------------------------------------------
 // 4. DATA SCHEMAS
 // -----------------------------------------------------------------------------
@@ -367,6 +391,57 @@ export const NODE_REGISTRY: Record<string, NodeDefinition<any>> = {
     outputs: [{ id: 'default', name: 'Merged' }],
     defaultConfig: { mode: 'wait_all' },
     configSchema: MergeSchema,
+  }),
+  'logic.waitUntil': createDefinition({
+    type: 'logic.waitUntil',
+    displayName: 'Wait Until',
+    description: 'Pause execution until a specified timestamp or target date arrives.',
+    category: 'logic',
+    icon: 'Clock',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Resumed' }],
+    defaultConfig: { targetDateTime: '', timeoutMs: 15000 },
+    configSchema: WaitUntilSchema,
+  }),
+  'logic.loop': createDefinition({
+    type: 'logic.loop',
+    displayName: 'Loop / Iterator',
+    description: 'Iterate over record sets or array items with batching and iteration caps.',
+    category: 'logic',
+    icon: 'Repeat',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [
+      { id: 'item', name: 'Each Item', label: 'EACH' },
+      { id: 'done', name: 'Finished', label: 'DONE' },
+    ],
+    defaultConfig: { items: '[]', batchSize: 10, maxIterations: 100, mode: 'sequential' },
+    configSchema: LoopSchema,
+  }),
+  'logic.switch': createDefinition({
+    type: 'logic.switch',
+    displayName: 'Switch / Multi-Path',
+    description: 'Route flow to different downstream branches based on matching values or rules.',
+    category: 'logic',
+    icon: 'Split',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [
+      { id: 'case_1', name: 'Case 1', label: 'CASE 1' },
+      { id: 'case_2', name: 'Case 2', label: 'CASE 2' },
+      { id: 'default', name: 'Default', label: 'DEFAULT' },
+    ],
+    defaultConfig: { value: '', cases: [], defaultHandle: 'default' },
+    configSchema: SwitchSchema,
+  }),
+  'action.subWorkflow': createDefinition({
+    type: 'action.subWorkflow',
+    displayName: 'Sub-Workflow',
+    description: 'Invoke another workflow as a modular, reusable component with parameter passing.',
+    category: 'action',
+    icon: 'Workflow',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Output' }],
+    defaultConfig: { subWorkflowId: '', inputData: {}, waitForCompletion: true },
+    configSchema: SubWorkflowSchema,
   }),
 
   // Data

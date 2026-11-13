@@ -18,6 +18,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 
 interface NavItem {
@@ -30,6 +31,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Workflows', href: '/workflows', icon: GitBranch },
+  { name: 'Schedules', href: '/schedules', icon: Clock },
   { name: 'Templates', href: '/templates', icon: Layers },
   { name: 'Integrations', href: '/integrations', icon: Zap },
   { name: 'Executions', href: '/executions', icon: Activity },

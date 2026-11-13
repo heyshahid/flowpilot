@@ -103,11 +103,23 @@ export class ExecutionWorker {
       }
 
       let workflowError: string | undefined;
+      const MAX_EXECUTION_DURATION_MS = Number((workflow as any).maxDurationMs || 60000);
+      const MAX_TOTAL_NODE_COUNT = Number((workflow as any).maxNodeCount || 500);
 
       // 6. Stage-by-Stage DAG Execution Loop
       for (let stageIdx = 0; stageIdx < plan.stages.length; stageIdx++) {
         if (signal.aborted) {
           workflowError = 'Execution cancelled by user.';
+          break;
+        }
+
+        if (Date.now() - startTime > MAX_EXECUTION_DURATION_MS) {
+          workflowError = `Workflow execution exceeded maximum permitted duration of ${MAX_EXECUTION_DURATION_MS}ms.`;
+          break;
+        }
+
+        if (traces.filter((t) => t.status === 'COMPLETED').length > MAX_TOTAL_NODE_COUNT) {
+          workflowError = `Workflow execution exceeded maximum permitted step count of ${MAX_TOTAL_NODE_COUNT}.`;
           break;
         }
 
@@ -199,10 +211,19 @@ export class ExecutionWorker {
                 durationMs: duration,
               };
 
-              // Branching logic: if logic.ifElse, evaluate branch route and propagate skips
-              if (node.type === 'logic.ifElse' || node.category === 'logic') {
+              // Branching logic: if logic node returns a branch or result, evaluate branch route and propagate skips
+              if (
+                node.type === 'logic.ifElse' ||
+                node.type === 'logic.switch' ||
+                node.type === 'logic.advancedCondition' ||
+                node.category === 'logic'
+              ) {
                 const activeBranch =
-                  output.branch === 'false' || output.result === false ? 'false' : 'true';
+                  output.branch !== undefined
+                    ? String(output.branch)
+                    : output.result === false
+                    ? 'false'
+                    : 'true';
 
                 const newlySkipped = ExecutionPlanner.calculateSkippedNodes(
                   node.id,

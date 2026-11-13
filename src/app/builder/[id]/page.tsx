@@ -37,6 +37,7 @@ import { NodeLibrary } from '@/components/canvas/NodeLibrary';
 import { NodeConfigPanel } from '@/components/canvas/NodeConfigPanel';
 import { ValidationDrawer } from '@/components/canvas/ValidationDrawer';
 import { ExecutionConsoleDrawer } from '@/components/canvas/ExecutionConsoleDrawer';
+import { VersionHistoryDrawer } from '@/components/canvas/VersionHistoryDrawer';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
@@ -52,6 +53,7 @@ import {
   Play,
   Layers,
   Sparkles,
+  History,
 } from 'lucide-react';
 
 interface HistorySnapshot {
@@ -92,7 +94,10 @@ function BuilderCanvas() {
   const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
 
-  // Auto-open execution drawer if URL has ?execution=id
+  // Version History State (Phase 6)
+  const [isVersionsOpen, setIsVersionsOpen] = useState(false);
+
+  // Auto-open execution drawer or version history drawer if URL has query params
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -100,6 +105,9 @@ function BuilderCanvas() {
       if (execParam) {
         setActiveExecutionId(execParam);
         setIsExecutionConsoleOpen(true);
+      }
+      if (urlParams.get('versions') === 'true') {
+        setIsVersionsOpen(true);
       }
     }
   }, []);
@@ -183,6 +191,17 @@ function BuilderCanvas() {
       return report;
     },
     [workflowId, workflowName]
+  );
+
+  const handleRestoreFromVersion = useCallback(
+    (restoredNodes: any[], restoredEdges: any[]) => {
+      setNodes(restoredNodes);
+      setEdges(restoredEdges);
+      setIsDirty(false);
+      setSaveStatus('saved');
+      runValidation(restoredNodes, restoredEdges);
+    },
+    [runValidation]
   );
 
   // Load Workflow from Store
@@ -833,6 +852,16 @@ function BuilderCanvas() {
             <span>{status === 'active' ? 'Active' : 'Draft'}</span>
           </button>
 
+          {/* Version History Button (Phase 6) */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsVersionsOpen(true)}
+            icon={<History className="w-3.5 h-3.5 text-indigo-600" />}
+          >
+            Versions
+          </Button>
+
           {/* Test Validation Button */}
           <Button
             variant="outline"
@@ -955,6 +984,14 @@ function BuilderCanvas() {
           onClose={() => setIsExecutionConsoleOpen(false)}
           executionId={activeExecutionId}
           onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
+        />
+
+        {/* Phase 6: Version History Drawer */}
+        <VersionHistoryDrawer
+          isOpen={isVersionsOpen}
+          onClose={() => setIsVersionsOpen(false)}
+          workflowId={workflowId}
+          onRestore={handleRestoreFromVersion}
         />
       </div>
     </div>

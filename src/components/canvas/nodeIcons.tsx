@@ -19,6 +19,9 @@ import {
   HelpCircle,
   FileSpreadsheet,
   MessageSquare,
+  Repeat,
+  Split,
+  Workflow,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -40,6 +43,9 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Layers,
   FileSpreadsheet,
   MessageSquare,
+  Repeat,
+  Split,
+  Workflow,
 };
 
 export function resolveNodeIcon(iconName?: string): React.ElementType {
