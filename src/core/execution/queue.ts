@@ -20,6 +20,18 @@ export class ExecutionQueue {
     this.maxConcurrency = options.maxConcurrency || 5;
   }
 
+  public getQueueLength(): number {
+    return this.queue.length;
+  }
+
+  public getRunningCount(): number {
+    return this.running.size;
+  }
+
+  public getMaxConcurrency(): number {
+    return this.maxConcurrency;
+  }
+
   /**
    * Enqueues a workflow for execution.
    * Immediately records execution with status QUEUED and returns the record.
