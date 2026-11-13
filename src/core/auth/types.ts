@@ -33,7 +33,14 @@ export type Permission =
   | 'webhook:read'
   | 'webhook:manage'
   // Audit logging & Analytics
-  | 'audit:read';
+  | 'audit:read'
+  // Workspace Usage & Quotas (Phase 9F)
+  | 'usage:read'
+  | 'quota:read'
+  | 'quota:manage'
+  // Alert Rules & Incidents (Phase 9F)
+  | 'alert:read'
+  | 'alert:manage';
 
 export interface UserRecord {
   id: string;

@@ -10,7 +10,9 @@ export type AuditResourceType =
   | 'schedule'
   | 'invitation'
   | 'webhook'
-  | 'security';
+  | 'security'
+  | 'quota'
+  | 'alert';
 
 export interface AuditLogRecord {
   id: string;

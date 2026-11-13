@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Shield,
   Key,
+  Gauge,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -20,12 +21,12 @@ export default function SettingsPage() {
           Settings & Governance
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Configure organization settings, team permissions, security policies, and audit governance.
+          Configure organization settings, team permissions, security policies, resource quotas, and audit governance.
         </p>
       </div>
 
       {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link
           href="/settings/workspace"
           className="p-5 bg-white border border-slate-200/80 hover:border-blue-400 rounded-xl shadow-xs transition-all group hover:shadow-md"
@@ -34,11 +35,27 @@ export default function SettingsPage() {
             <Building2 className="w-5 h-5" />
           </div>
           <div className="font-bold text-sm text-slate-900 flex items-center justify-between">
-            <span>Workspace Settings</span>
+            <span>Workspace</span>
             <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
           </div>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            Manage workspace profile, member defaults, and ownership transfer.
+            Manage profile, member defaults, and ownership.
+          </p>
+        </Link>
+
+        <Link
+          href="/settings/usage"
+          className="p-5 bg-white border border-slate-200/80 hover:border-amber-400 rounded-xl shadow-xs transition-all group hover:shadow-md"
+        >
+          <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+            <Gauge className="w-5 h-5" />
+          </div>
+          <div className="font-bold text-sm text-slate-900 flex items-center justify-between">
+            <span>Usage & Quotas</span>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors" />
+          </div>
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+            Monitor consumption, active limits, and resource quotas.
           </p>
         </Link>
 

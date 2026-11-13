@@ -77,3 +77,4 @@ All endpoints enforce tenant authorization via `AuthContextManager.resolve(req)`
 * **`GET /api/v1/analytics/ai-usage/providers`**: Provider-level volume, latency, and cost breakdown.
 * **`GET /api/v1/analytics/ai-usage/models`**: Model-level volume, token rates, pricing versions, and estimated cost (supports optional `?provider=` filter).
 * **`GET /api/v1/analytics/ai-usage/trends`**: Time-series points bucketed by `day` or `hour` with optional `startDate` and `endDate` parameters.
+

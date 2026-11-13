@@ -29,6 +29,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'webhook:read',
     'webhook:manage',
     'audit:read',
+    'usage:read',
+    'quota:read',
+    'quota:manage',
+    'alert:read',
+    'alert:manage',
   ],
   ADMIN: [
     'workspace:read',
@@ -55,6 +60,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'webhook:read',
     'webhook:manage',
     'audit:read',
+    'usage:read',
+    'quota:read',
+    'quota:manage',
+    'alert:read',
+    'alert:manage',
   ],
   EDITOR: [
     'workspace:read',
@@ -70,6 +80,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'schedule:manage',
     'webhook:read',
     'audit:read',
+    'usage:read',
+    'quota:read',
+    'alert:read',
   ],
   VIEWER: [
     'workspace:read',
@@ -80,6 +93,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'schedule:read',
     'webhook:read',
     'audit:read',
+    'usage:read',
+    'quota:read',
+    'alert:read',
   ],
 };
 

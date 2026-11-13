@@ -79,3 +79,4 @@ Substituting missing pricing with zero produces deceptively low cost figures tha
 > * Minimum billing granularities and currency conversion fees.
 >
 > Every user-facing AI analytics screen and API response displays the mandatory platform advisory disclaimer.
+

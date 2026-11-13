@@ -21,6 +21,7 @@ import {
   Clock,
   Users,
   Radio,
+  Bell,
 } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
 
@@ -39,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Integrations', href: '/integrations', icon: Zap },
   { name: 'Executions', href: '/executions', icon: Activity },
   { name: 'Monitoring', href: '/monitoring', icon: Radio, badge: 'Live' },
+  { name: 'Alerts', href: '/alerts', icon: Bell },
   { name: 'Credentials', href: '/credentials', icon: Key },
   { name: 'AI Assistant', href: '/ai-assistant', icon: Bot, badge: 'AI' },
   { name: 'Team', href: '/team', icon: Users },

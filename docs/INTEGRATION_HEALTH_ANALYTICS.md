@@ -86,3 +86,4 @@ All integration analytics endpoints enforce workspace scoping via `AuthContextMa
 * **`GET /api/v1/analytics/integrations/overview`**: Holistic workspace metrics, success rate, mean/median duration, status code breakdown, failure categories, and retention notices.
 * **`GET /api/v1/analytics/integrations/[id]`**: Detail metrics for a specific integration service, accompanied by recent operations.
 * **`GET /api/v1/analytics/integrations/webhooks`**: Inbound webhook delivery analytics, accepted/rejected/failed counts, status codes, and 500-buffer metadata.
+
