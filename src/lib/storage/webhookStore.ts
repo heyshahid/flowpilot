@@ -47,7 +47,7 @@ export const SEED_WEBHOOKS: WebhookConfig[] = [
     workflowName: 'Inbound Lead Qualification & VIP Routing',
     name: 'Website Contact Form Webhook',
     token: 'whk_48a9f029b9e14a89bc213890',
-    secret: 'whsec_98124901824901248091248901284901',
+    secret: 'fpsec_98124901824901248091248901284901',
     status: 'active',
     allowedMethods: ['POST'],
     authType: 'hmac_sha256',
@@ -64,7 +64,7 @@ export const SEED_WEBHOOKS: WebhookConfig[] = [
     workflowName: 'Customer Order Enrichment API',
     name: 'Shopify Order Checkout Hook',
     token: 'whk_72cd49e10912839012489012',
-    secret: 'whsec_72891249012849012849012849012849',
+    secret: 'fpsec_72891249012849012849012849012849',
     status: 'active',
     allowedMethods: ['POST'],
     authType: 'none',
@@ -257,3 +257,4 @@ export class WebhookStore {
 }
 
 export const webhookStore = new WebhookStore();
+

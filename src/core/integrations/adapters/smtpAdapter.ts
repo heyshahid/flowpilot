@@ -141,3 +141,4 @@ export class SmtpAdapter implements IntegrationAdapter {
 }
 
 export const smtpAdapter = new SmtpAdapter();
+

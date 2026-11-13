@@ -75,7 +75,7 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
         integrationId: 'smtp',
         type: 'api_key',
         data: {
-          apiKey: 'SG.1234567890abcdefghijklmnopqrstuvwxyz',
+          apiKey: 'mock_sg_key_1234567890abcdefghijklmnopqrstuvwxyz',
           host: 'smtp.sendgrid.net',
           port: 587,
         },
@@ -95,7 +95,7 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
       // Verify decrypted retrieval
       const decrypted = await credentialStore.getDecryptedData<{ apiKey: string }>(saved.id);
       expect(decrypted).toBeDefined();
-      expect(decrypted?.apiKey).toBe('SG.1234567890abcdefghijklmnopqrstuvwxyz');
+      expect(decrypted?.apiKey).toBe('mock_sg_key_1234567890abcdefghijklmnopqrstuvwxyz');
 
       // Cleanup
       await credentialStore.delete(saved.id);
@@ -109,7 +109,7 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
       const secret = WebhookSecurityManager.generateWebhookSecret();
 
       expect(token).toMatch(/^whk_[a-f0-9]{48}$/);
-      expect(secret).toMatch(/^whsec_[a-f0-9]{64}$/);
+      expect(secret).toMatch(/^fpsec_[a-f0-9]{64}$/);
     });
 
     it('should generate and verify valid HMAC-SHA256 signatures with timing-safe comparison', () => {

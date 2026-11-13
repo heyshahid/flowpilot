@@ -30,3 +30,4 @@ FlowPilot's integration layer decouples third-party service contracts from the w
 1. **Isolated Keyrings:** Credentials never travel in workflow JSON graphs. Workflows only reference abstract IDs (e.g. `credentialId: "cred_sample_smtp"`).
 2. **Zero-Trust Network Interceptor:** All outbound sockets created by `HttpAdapter` and `WebhookManager` pass through `validateOutboundUrl()`.
 3. **No Dynamic Code Evaluation:** Templated variables (`{{ $steps.foo.output.bar }}`) are resolved through an AST-based tokenizer, completely eliminating `eval()` and `Function()`.
+

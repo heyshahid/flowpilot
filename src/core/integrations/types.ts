@@ -70,3 +70,4 @@ export interface IntegrationAdapter {
     credentials?: Record<string, any>
   ): Promise<Record<string, any>>;
 }
+

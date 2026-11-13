@@ -31,3 +31,4 @@ export async function DELETE(
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
   }
 }
+

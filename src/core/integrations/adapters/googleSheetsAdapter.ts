@@ -114,3 +114,4 @@ export class GoogleSheetsAdapter implements IntegrationAdapter {
 }
 
 export const googleSheetsAdapter = new GoogleSheetsAdapter();
+

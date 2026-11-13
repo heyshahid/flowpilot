@@ -29,7 +29,7 @@ export const SEED_CREDENTIALS: CredentialRecord[] = [
       port: 587,
       secure: false,
       user: 'apikey',
-      password: 'SG.fake_api_key_for_testing_relay_12345',
+      password: 'mock_sg_api_key_for_testing_relay_12345',
       senderEmail: 'notifications@flowpilot.dev',
       senderName: 'FlowPilot Dispatcher',
     }),
@@ -37,7 +37,7 @@ export const SEED_CREDENTIALS: CredentialRecord[] = [
       host: 'smtp.sendgrid.net',
       port: '587',
       user: 'apikey',
-      password: CredentialVault.maskSecret('SG.fake_api_key_for_testing_relay_12345'),
+      password: CredentialVault.maskSecret('mock_sg_api_key_for_testing_relay_12345'),
       senderEmail: 'notifications@flowpilot.dev',
     },
     status: 'valid',
@@ -143,9 +143,9 @@ export class CredentialStore {
       if (typeof value === 'string' && value.length > 0) {
         maskedPreview[key] =
           key.toLowerCase().includes('password') ||
-          key.toLowerCase().includes('token') ||
-          key.toLowerCase().includes('secret') ||
-          key.toLowerCase().includes('key')
+            key.toLowerCase().includes('token') ||
+            key.toLowerCase().includes('secret') ||
+            key.toLowerCase().includes('key')
             ? CredentialVault.maskSecret(value)
             : value;
       } else {
@@ -208,3 +208,4 @@ export class CredentialStore {
 }
 
 export const credentialStore = new CredentialStore();
+

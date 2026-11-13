@@ -22,3 +22,4 @@
 2. Run `/newbot` to create your automation bot.
 3. Copy the HTTP API token (`<bot_id>:<alphanumeric_secret>`).
 4. Paste the token into FlowPilot's Telegram Connector.
+

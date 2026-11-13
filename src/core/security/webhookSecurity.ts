@@ -15,7 +15,7 @@ export class WebhookSecurityManager {
    * Generates a cryptographically strong HMAC secret.
    */
   public static generateWebhookSecret(): string {
-    return `whsec_${crypto.randomBytes(32).toString('hex')}`;
+    return `fpsec_${crypto.randomBytes(32).toString('hex')}`;
   }
 
   /**

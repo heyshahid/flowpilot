@@ -97,3 +97,4 @@ export class SlackAdapter implements IntegrationAdapter {
 }
 
 export const slackAdapter = new SlackAdapter();
+

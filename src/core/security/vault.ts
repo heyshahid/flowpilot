@@ -75,3 +75,4 @@ export class CredentialVault {
     return `${prefix}••••••••${suffix}`;
   }
 }
+

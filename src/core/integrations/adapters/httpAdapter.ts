@@ -131,3 +131,4 @@ export class HttpAdapter implements IntegrationAdapter {
 }
 
 export const httpAdapter = new HttpAdapter();
+

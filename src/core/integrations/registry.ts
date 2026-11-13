@@ -24,7 +24,7 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
         label: 'HMAC Signing Secret',
         type: 'password',
         required: false,
-        placeholder: 'whsec_xxxxxxxxxxxxxxxxxxxx',
+        placeholder: 'fpsec_xxxxxxxxxxxxxxxxxxxx',
         description: 'Optional shared secret used to verify X-FlowPilot-Signature or X-Hub-Signature-256.',
       },
     ],
