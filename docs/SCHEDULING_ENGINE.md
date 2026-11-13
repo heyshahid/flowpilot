@@ -55,3 +55,30 @@ flowchart TD
 - `PATCH /api/v1/schedules/:id`: Update schedule configuration, pause/activate.
 - `DELETE /api/v1/schedules/:id`: Delete a schedule.
 - `POST /api/v1/schedules/:id/trigger`: Manually trigger an immediate execution run.
+
+
+---
+
+## 4. Production Multi-Worker Clustered Scaling
+
+In distributed production environments where FlowPilot workers are scaled horizontally across multiple containers or Kubernetes pods:
+- **Challenge:** In-memory concurrency locks (`isTickRunning`) are local to a single process. Multiple running worker containers checking `.data/schedules.json` simultaneously could cause duplicate execution dispatching.
+- **Architectural Requirement:**
+  1. **Atomic Schedule Claiming:** Transition from file-backed JSON to PostgreSQL `schedules` table with row-level locks:
+     ```sql
+     -- Atomic claim and lock for due schedules across horizontal workers
+     BEGIN;
+     SELECT id, workflow_id, cron_expression, next_run_at
+     FROM schedules
+     WHERE is_active = true AND next_run_at <= NOW()
+     ORDER BY next_run_at ASC
+     LIMIT 10
+     FOR UPDATE SKIP LOCKED;
+
+     -- Update next_run_at immediately upon claiming
+     UPDATE schedules
+     SET last_run_at = NOW(), next_run_at = $computedNextRun, updated_at = NOW()
+     WHERE id = ANY($claimedIds);
+     COMMIT;
+     ```
+  2. **Distributed Locking (Redis Redlock):** Alternatively, utilize a Redis-backed distributed lock key (e.g. `flowpilot:lock:scheduler:tick` with a 15-second TTL) so only one designated worker acquires the scheduler tick leader lease at any given moment.

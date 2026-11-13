@@ -28,3 +28,18 @@ All asynchronous nodes (`logic.delay`, `logic.waitUntil`, `action.httpRequest`, 
 1. Active timer handles (`setTimeout`) are cleared immediately.
 2. In-flight HTTP fetch connections are aborted via `controller.abort()`.
 3. The execution record is persisted with status `cancelled` and an audit reason log.
+
+---
+
+## 4. Current Platform Boundaries & Roadmap Evolution
+
+### A. 60-Second Total Execution Timeout
+- **Current Constraint:** Synchronous and background executions are currently capped at 60 seconds (`MAX_EXECUTION_DURATION_MS = 60000`). This ensures worker processes remain responsive, prevent memory leaks, and do not hold zombie Node.js event loops.
+- **Durable Execution Roadmap:** Long-running workflows (e.g. waiting days between steps or orchestrating large multi-hour batch runs) will transition to checkpointed durable state machines (similar to Temporal / Inngest / Redis BullMQ). This allows workflows to sleep to disk and resume on worker wake-up without holding memory.
+
+### B. 30-Day Delay Cap
+- **Current Constraint:** The `logic.delay` and `logic.waitUntil` drivers enforce a maximum duration of 30 days (`2,592,000,000 ms`). Any delay exceeding this cap is clamped with an operational warning.
+
+### C. Multi-Worker Clustered Locking & Schedule Claiming
+- **Current Architecture:** FlowPilot currently uses an in-process concurrency lock (`isTickRunning`) and file-backed JSON store (`.data/schedules.json`) tailored for single-instance container deployments.
+- **Production Clustered Recommendation:** When deploying multiple horizontal worker instances behind a load balancer, schedule claiming and locking must transition to shared durable storage using PostgreSQL row-level locks (`SELECT * FROM schedules WHERE next_run_at <= NOW() FOR UPDATE SKIP LOCKED`) or Redis distributed locks (Redlock) to guarantee strictly-once atomic job dispatching.
