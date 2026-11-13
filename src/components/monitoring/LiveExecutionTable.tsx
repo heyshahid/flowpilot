@@ -337,3 +337,4 @@ export const LiveExecutionTable: React.FC<LiveExecutionTableProps> = ({
     </div>
   );
 };
+

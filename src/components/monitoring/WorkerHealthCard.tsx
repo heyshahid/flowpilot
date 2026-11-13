@@ -182,3 +182,4 @@ export const WorkerHealthCard: React.FC<WorkerHealthCardProps> = ({
     </div>
   );
 };
+

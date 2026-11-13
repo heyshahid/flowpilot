@@ -236,3 +236,4 @@ export class AlertDetector {
 }
 
 export const alertDetector = AlertDetector.getInstance();
+

@@ -131,3 +131,4 @@ export class WorkerHeartbeatManager {
 }
 
 export const workerHeartbeatManager = WorkerHeartbeatManager.getInstance();
+

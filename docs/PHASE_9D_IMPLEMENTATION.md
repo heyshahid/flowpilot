@@ -54,3 +54,4 @@ Phase 9D delivers a centralized operational observability and scheduler health m
 * `WorkerHealthCard.tsx`: Worker heartbeat card with memory, uptime, and queue metrics.
 * `OperationalAlertsPanel.tsx`: Deduplicated incident cards.
 * `AppSidebar.tsx`: Added `Monitoring` navigation item with "Live" badge.
+

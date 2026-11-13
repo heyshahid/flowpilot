@@ -153,6 +153,7 @@ export class WebhookStore {
     authType?: WebhookConfig['authType'];
     allowedMethods?: ('POST' | 'GET')[];
     rateLimitPerMin?: number;
+    workspaceId?: string;
   }): Promise<WebhookConfig> {
     const id = `whk_cfg_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
@@ -161,6 +162,7 @@ export class WebhookStore {
       id,
       workflowId: params.workflowId,
       workflowName: params.workflowName,
+      workspaceId: params.workspaceId || 'ws_default',
       name: params.name || `${params.workflowName} Ingestion`,
       token: WebhookSecurityManager.generateWebhookToken(),
       secret: WebhookSecurityManager.generateWebhookSecret(),
@@ -225,6 +227,14 @@ export class WebhookStore {
     config.updatedAt = new Date().toISOString();
     this.persistConfigs();
     return config;
+  }
+
+  public async delete(id: string): Promise<boolean> {
+    const deleted = this.configs.delete(id);
+    if (deleted) {
+      this.persistConfigs();
+    }
+    return deleted;
   }
 
   public async logDelivery(delivery: Omit<WebhookDeliveryRecord, 'id' | 'timestamp'>): Promise<WebhookDeliveryRecord> {

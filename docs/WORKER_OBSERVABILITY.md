@@ -42,3 +42,4 @@ The monitoring dashboard displays:
 * **Saturation Bar:** Percentage of active concurrency slots utilized ($\frac{\text{activeConcurrency}}{\text{maxConcurrency}} \times 100\%$).
 * **Queue Depth:** Total count of pending executions waiting for a concurrency slot.
 * **Saturation State:** Flags `isSaturated = true` when active concurrency reaches $100\%$.
+

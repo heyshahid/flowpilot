@@ -134,3 +134,4 @@ export class MonitoringService {
 }
 
 export const monitoringService = MonitoringService.getInstance();
+

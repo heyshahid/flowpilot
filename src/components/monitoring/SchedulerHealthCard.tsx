@@ -248,3 +248,4 @@ export const SchedulerHealthCard: React.FC<SchedulerHealthCardProps> = ({
     </div>
   );
 };
+

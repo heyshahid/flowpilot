@@ -40,3 +40,4 @@ FlowPilot implements a resilient, controlled polling architecture:
 * **Page Visibility Awareness:** Automatically pauses polling when the browser tab is hidden or minimized (`document.visibilityState === 'hidden'`) to eliminate redundant server load.
 * **In-Flight Cancellation:** Uses `AbortController` to abort previous in-flight HTTP requests before initiating a new poll tick, preventing race conditions and overlapping requests.
 * **Last Updated Indicator:** Displays the exact timestamp of the last successful synchronization.
+

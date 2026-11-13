@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   BarChart3,
   Activity,
@@ -106,15 +107,33 @@ export default function AnalyticsDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Analytics Sub-Nav */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+          <Link
+            href="/analytics"
+            className="px-3 py-1 rounded-md bg-white text-blue-600 shadow-2xs"
+          >
+            Overview
+          </Link>
+          <Link
+            href="/analytics/integrations"
+            className="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            Integrations
+          </Link>
+          <Link
+            href="/analytics/ai-usage"
+            className="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            AI Usage & Cost
+          </Link>
           <button
             onClick={() => fetchAnalytics(true)}
             disabled={isLoading || isRefreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-xs disabled:opacity-50"
+            className="p-1 rounded-md text-slate-500 hover:bg-white hover:text-slate-700 transition-colors ml-1"
             title="Refresh analytics data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
-            <span>Refresh</span>
           </button>
         </div>
       </div>

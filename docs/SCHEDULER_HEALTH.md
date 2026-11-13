@@ -37,3 +37,4 @@ The scheduler health engine correlates each schedule with actual workflow execut
 * Inspects `schedule.lastExecutionId` to retrieve the terminal status (`COMPLETED` vs. `FAILED`) and execution duration of the most recent scheduled run.
 * Computes `recentSuccessRatePercent` across executions linked via `$schedule.id` or `workflowId`.
 * Flags schedules where failure rate $>30\%$ as unreliable.
+
