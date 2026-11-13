@@ -85,3 +85,4 @@ All rate calculations verify that the denominator is strictly non-zero before di
    `WebhookStore` retains up to 500 recent delivery records in its circular buffer. The integration health report explicitly documents this limitation.
 2. **Scheduler Telemetry:**
    Scheduler metrics report confirmed schedules configured in `ScheduleStore`. Worker heartbeats and distributed queue depths require external Redis/BullMQ instrumentation (planned for Phase 10+).
+

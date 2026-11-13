@@ -15,6 +15,7 @@ import {
   TimeSeriesResult,
   TimeWindow,
   WorkflowPerformanceReport,
+  WorkflowAnalyticsSummaryItem,
   AIUsageMetricsSummary,
 } from './types';
 import {
@@ -214,6 +215,97 @@ export class AnalyticsService {
       nodeMetrics,
       mostProblematicNodes,
     };
+  }
+
+  /**
+   * Retrieves summary performance metrics for all workflows in a workspace for the reporting period.
+   */
+  public async getWorkspaceWorkflowsOverview(
+    options: AnalyticsQueryOptions
+  ): Promise<WorkflowAnalyticsSummaryItem[]> {
+    const workflows = workflowStore.getAll(options.workspaceId);
+    const { executions } = await this.getFilteredExecutions(options);
+
+    // Group executions by workflowId
+    const execsByWorkflow = new Map<string, WorkflowExecutionRecord[]>();
+    for (const e of executions) {
+      const list = execsByWorkflow.get(e.workflowId) || [];
+      list.push(e);
+      execsByWorkflow.set(e.workflowId, list);
+    }
+
+    const items: WorkflowAnalyticsSummaryItem[] = workflows.map((wf) => {
+      const wfExecs = execsByWorkflow.get(wf.id) || [];
+      const totalExecutions = wfExecs.length;
+      const completedExecutions = wfExecs.filter((e) => e.status === 'COMPLETED').length;
+      const failedExecutions = wfExecs.filter((e) => e.status === 'FAILED').length;
+
+      const completedDurations = wfExecs
+        .filter((e) => e.status === 'COMPLETED' && typeof e.durationMs === 'number' && e.durationMs >= 0)
+        .map((e) => e.durationMs as number);
+
+      const successRate = calculateSuccessRate(completedExecutions, failedExecutions);
+      const meanDurationMs = calculateMeanDuration(completedDurations);
+
+      let lastExecutedAt: string | null = null;
+      if (wfExecs.length > 0) {
+        lastExecutedAt = wfExecs[0].startedAt;
+      } else if (wf.lastExecutedAt) {
+        lastExecutedAt = wf.lastExecutedAt;
+      }
+
+      const triggerNode = wf.nodes?.find((n) => n.category === 'trigger' || n.type?.startsWith('trigger'));
+      const triggerType = triggerNode?.type || (wfExecs.length > 0 ? wfExecs[0].trigger?.type : 'manual') || 'manual';
+
+      return {
+        id: wf.id,
+        name: wf.name,
+        status: wf.status,
+        triggerType,
+        totalExecutions,
+        completedExecutions,
+        failedExecutions,
+        successRate,
+        meanDurationMs,
+        lastExecutedAt,
+        updatedAt: wf.updatedAt,
+      };
+    });
+
+    // Also include any execution records from workflows not in store
+    const knownWorkflowIds = new Set(workflows.map((w) => w.id));
+    for (const [wfId, wfExecs] of execsByWorkflow.entries()) {
+      if (!knownWorkflowIds.has(wfId)) {
+        const sample = wfExecs[0];
+        const completedExecutions = wfExecs.filter((e) => e.status === 'COMPLETED').length;
+        const failedExecutions = wfExecs.filter((e) => e.status === 'FAILED').length;
+        const completedDurations = wfExecs
+          .filter((e) => e.status === 'COMPLETED' && typeof e.durationMs === 'number' && e.durationMs >= 0)
+          .map((e) => e.durationMs as number);
+
+        items.push({
+          id: wfId,
+          name: sample.workflowName || `Workflow ${wfId}`,
+          status: 'active',
+          triggerType: sample.trigger?.type || 'manual',
+          totalExecutions: wfExecs.length,
+          completedExecutions,
+          failedExecutions,
+          successRate: calculateSuccessRate(completedExecutions, failedExecutions),
+          meanDurationMs: calculateMeanDuration(completedDurations),
+          lastExecutedAt: sample.startedAt,
+          updatedAt: sample.startedAt,
+        });
+      }
+    }
+
+    items.sort(
+      (a, b) =>
+        b.totalExecutions - a.totalExecutions ||
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+
+    return items;
   }
 
   /**

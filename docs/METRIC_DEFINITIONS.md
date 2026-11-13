@@ -112,3 +112,4 @@ $$
 $$
 
 * If an AI model tier is missing from the pricing registry, estimated cost returns `costUsd: null` with `isAvailable: false`. Cost is **never fabricated or assumed to be zero**.
+

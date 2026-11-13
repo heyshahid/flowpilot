@@ -91,6 +91,20 @@ export interface WorkflowPerformanceReport {
   mostProblematicNodes: NodePerformanceMetric[];
 }
 
+export interface WorkflowAnalyticsSummaryItem {
+  id: string;
+  name: string;
+  status: string;
+  triggerType: string;
+  totalExecutions: number;
+  completedExecutions: number;
+  failedExecutions: number;
+  successRate: MetricValue<number | null>;
+  meanDurationMs: MetricValue<number | null>;
+  lastExecutedAt: string | null;
+  updatedAt: string;
+}
+
 export interface ModelPricingTier {
   provider: AIProviderId;
   model: string;
