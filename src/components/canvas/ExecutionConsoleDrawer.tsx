@@ -15,6 +15,7 @@ import {
   X,
   Layers,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +39,30 @@ export function ExecutionConsoleDrawer({
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [isCancelling, setIsCancelling] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [aiDiagnosis, setAiDiagnosis] = useState<any>(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+
+  const handleDiagnoseAI = async () => {
+    if (!executionId) return;
+    setIsDiagnosing(true);
+    try {
+      const res = await fetch('/api/v1/ai/analyze-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ executionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiDiagnosis(data.data);
+      } else {
+        alert(data.error || 'Failed to diagnose execution error.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error diagnosing execution.');
+    } finally {
+      setIsDiagnosing(false);
+    }
+  };
 
   // Poll execution status while active
   useEffect(() => {
@@ -242,13 +267,48 @@ export function ExecutionConsoleDrawer({
       {/* Body Content */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-h-[60vh]">
         {/* Error Banner if workflow failed */}
-        {execution?.error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 flex items-start gap-3">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <div className="font-bold">Execution Failed</div>
-              <div className="mt-1 font-mono text-[11px] whitespace-pre-wrap">{execution.error}</div>
+        {(execution?.error || execution?.status === 'FAILED') && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Execution Failed</div>
+                  <div className="mt-1 font-mono text-[11px] whitespace-pre-wrap">{execution.error || 'A step failed during execution.'}</div>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDiagnoseAI}
+                isLoading={isDiagnosing}
+                icon={<Sparkles className="w-3.5 h-3.5 text-purple-600" />}
+                className="bg-white text-purple-700 border-purple-200 hover:bg-purple-50 shrink-0"
+              >
+                AI Error Diagnosis
+              </Button>
             </div>
+
+            {aiDiagnosis && (
+              <div className="pt-3 border-t border-rose-200/60 text-xs space-y-2 text-slate-800 bg-white/80 p-3 rounded-lg">
+                <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>{aiDiagnosis.summary}</span>
+                  <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-[10px] ml-auto">
+                    {Math.round(aiDiagnosis.confidenceScore * 100)}% Confidence
+                  </Badge>
+                </div>
+                <p className="text-slate-600 text-[11px]">{aiDiagnosis.rootCause}</p>
+                <div>
+                  <span className="font-semibold text-slate-800 text-[11px]">Recommended Fixes:</span>
+                  <ul className="list-disc pl-4 mt-1 space-y-1 text-[11px] text-slate-600">
+                    {aiDiagnosis.suggestedFixes.map((fix: string, idx: number) => (
+                      <li key={idx}>{fix}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

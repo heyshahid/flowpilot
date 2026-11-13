@@ -38,6 +38,7 @@ import { NodeConfigPanel } from '@/components/canvas/NodeConfigPanel';
 import { ValidationDrawer } from '@/components/canvas/ValidationDrawer';
 import { ExecutionConsoleDrawer } from '@/components/canvas/ExecutionConsoleDrawer';
 import { VersionHistoryDrawer } from '@/components/canvas/VersionHistoryDrawer';
+import { AiCanvasAssistantDrawer } from '@/components/canvas/AiCanvasAssistantDrawer';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
@@ -97,7 +98,10 @@ function BuilderCanvas() {
   // Version History State (Phase 6)
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
 
-  // Auto-open execution drawer or version history drawer if URL has query params
+  // AI Canvas Assistant State (Phase 7)
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+
+  // Auto-open execution drawer, version drawer, or AI assistant if URL has query params
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -108,6 +112,9 @@ function BuilderCanvas() {
       }
       if (urlParams.get('versions') === 'true') {
         setIsVersionsOpen(true);
+      }
+      if (urlParams.get('assistant') === 'true') {
+        setIsAIAssistantOpen(true);
       }
     }
   }, []);
@@ -862,6 +869,16 @@ function BuilderCanvas() {
             Versions
           </Button>
 
+          {/* AI Copilot Button (Phase 7) */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAIAssistantOpen(true)}
+            icon={<Sparkles className="w-3.5 h-3.5 text-purple-600" />}
+          >
+            AI Copilot
+          </Button>
+
           {/* Test Validation Button */}
           <Button
             variant="outline"
@@ -992,6 +1009,22 @@ function BuilderCanvas() {
           onClose={() => setIsVersionsOpen(false)}
           workflowId={workflowId}
           onRestore={handleRestoreFromVersion}
+        />
+
+        {/* Phase 7: AI Copilot Assistant Drawer */}
+        <AiCanvasAssistantDrawer
+          isOpen={isAIAssistantOpen}
+          onClose={() => setIsAIAssistantOpen(false)}
+          workflowId={workflowId}
+          workflowName={workflowName}
+          nodes={nodes}
+          edges={edges}
+          onApplyChanges={(newNodes, newEdges) => {
+            setNodes(newNodes);
+            setEdges(newEdges);
+            setIsDirty(true);
+            runValidation(newNodes, newEdges);
+          }}
         />
       </div>
     </div>

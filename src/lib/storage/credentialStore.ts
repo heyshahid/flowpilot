@@ -190,12 +190,16 @@ export class CredentialStore {
     }
   }
 
-  public async list(filter?: { integrationId?: string }): Promise<CredentialRecord[]> {
+  public listSync(filter?: { integrationId?: string }): CredentialRecord[] {
     let list = Array.from(this.inMemoryCredentials.values());
     if (filter?.integrationId) {
       list = list.filter((c) => c.integrationId === filter.integrationId);
     }
     return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  public async list(filter?: { integrationId?: string }): Promise<CredentialRecord[]> {
+    return this.listSync(filter);
   }
 
   public async delete(id: string): Promise<boolean> {

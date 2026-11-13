@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'active' | 'draft' | 'paused' | 'success' | 'failed' | 'neutral' | 'blue';
+  variant?: 'active' | 'draft' | 'paused' | 'success' | 'failed' | 'neutral' | 'blue' | 'outline';
   size?: 'sm' | 'md';
 }
 
@@ -21,6 +21,7 @@ export const Badge: React.FC<BadgeProps> = ({
     failed: 'bg-red-50 text-red-700 border-red-200',
     neutral: 'bg-slate-50 text-slate-600 border-slate-200',
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    outline: 'bg-white text-slate-700 border-slate-200',
   };
 
   const sizes = {

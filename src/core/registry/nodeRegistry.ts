@@ -187,6 +187,12 @@ export const AiSummarizationSchema = z.object({
   maxLength: z.enum(['short', 'medium', 'detailed']).default('medium'),
 });
 
+export const AiDataExtractionSchema = z.object({
+  inputText: z.string().min(1, 'Input text is required'),
+  extractionSchema: z.record(z.string()).default({ name: 'string', email: 'string' }),
+  outputFormat: z.enum(['json']).default('json'),
+});
+
 // -----------------------------------------------------------------------------
 // HELPER TO CREATE DEFINITIONS
 // -----------------------------------------------------------------------------
@@ -525,6 +531,21 @@ export const NODE_REGISTRY: Record<string, NodeDefinition<any>> = {
     outputs: [{ id: 'default', name: 'Summary' }],
     defaultConfig: { inputText: '', maxLength: 'medium' },
     configSchema: AiSummarizationSchema,
+  }),
+  'ai.dataExtraction': createDefinition({
+    type: 'ai.dataExtraction',
+    displayName: 'AI Data Extraction',
+    description: 'Extract structured JSON entities (names, emails, dates) from unstructured text.',
+    category: 'ai',
+    icon: 'Database',
+    inputs: [{ id: 'default', name: 'Input' }],
+    outputs: [{ id: 'default', name: 'Extracted' }],
+    defaultConfig: {
+      inputText: '',
+      extractionSchema: { name: 'string', email: 'string' },
+      outputFormat: 'json',
+    },
+    configSchema: AiDataExtractionSchema,
   }),
 };
 

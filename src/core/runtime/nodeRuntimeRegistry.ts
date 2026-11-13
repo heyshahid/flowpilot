@@ -13,6 +13,11 @@ import { loopDriver } from './drivers/loop';
 import { advancedConditionDriver } from './drivers/advancedCondition';
 import { mergeDriver } from './drivers/merge';
 import { subWorkflowDriver } from './drivers/subWorkflow';
+import {
+  aiDataExtractionDriver,
+  aiClassificationDriver,
+  aiSummarizationDriver,
+} from './drivers/aiDataExtract';
 import { googleSheetsAdapter } from '../integrations/adapters/googleSheetsAdapter';
 import { slackAdapter } from '../integrations/adapters/slackAdapter';
 import { telegramAdapter } from '../integrations/adapters/telegramAdapter';
@@ -113,25 +118,11 @@ export class NodeRuntimeRegistry {
       return { parsed };
     });
 
-    // AI
+    // AI Nodes (Phase 7)
     this.registerDriver('ai.textGeneration', textGenerationDriver);
-    this.registerDriver('ai.classification', async (context, resolvedConfig) => {
-      const text = String(resolvedConfig.text || resolvedConfig.prompt || '');
-      return {
-        classification: 'standard_priority',
-        confidence: 0.96,
-        text,
-        timestamp: new Date().toISOString(),
-      };
-    });
-    this.registerDriver('ai.summarization', async (context, resolvedConfig) => {
-      const text = String(resolvedConfig.text || resolvedConfig.prompt || '');
-      return {
-        summary: `Summary of ${text.length} chars: Successfully processed.`,
-        compressionRatio: '75%',
-        timestamp: new Date().toISOString(),
-      };
-    });
+    this.registerDriver('ai.classification', aiClassificationDriver);
+    this.registerDriver('ai.summarization', aiSummarizationDriver);
+    this.registerDriver('ai.dataExtraction', aiDataExtractionDriver);
   }
 }
 
