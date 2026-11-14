@@ -61,3 +61,4 @@ Every recommendation surfaces relevant system limitations to prevent misinterpre
    - For parallelization suggestions, static graph analysis confirms absence of explicit variable dependencies (`{{steps.node...}}`), but cannot prove independence from shared external databases, external state mutations, or remote API concurrency limits.
 4. **Single-Process Concurrency**:
    - The engine concurrency lock is an in-memory process guard. In a multi-node horizontal deployment, evaluations run independently per node.
+

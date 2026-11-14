@@ -72,3 +72,4 @@ Every lifecycle action produces an immutable record in `.data/recommendation_his
 - `performedBy` & `performedByName`: Actor identity.
 - `notes`: Justification or resolution notes.
 - `timestamp`: ISO 8601 audit timestamp.
+

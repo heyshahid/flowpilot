@@ -283,3 +283,4 @@ This document details all 24 diagnostic rules implemented in the **FlowPilot Opt
 - **Standard Limitations**:
   - Workflow execution engine enforces a global execution timeout, but unbounded loops degrade performance until timeout.
 - **Suggested Actions**: Configure an explicit maximum iteration limit (e.g. 50 or 100) on the loop node in the builder.
+

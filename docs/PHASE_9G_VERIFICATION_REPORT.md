@@ -23,7 +23,7 @@ All engineering requirements and safeguards approved in the Pre-Implementation A
 | :--- | :---: | :--- |
 | **8 Recommendation Categories** | ✅ Complete | Evaluates Performance, Node Bottlenecks, Reliability, Integrations, AI Cost, Scheduling, Quotas, and Architecture. |
 | **Deterministic Priority Scoring [10-100]** | ✅ Complete | Calculated strictly as $\text{Base Severity} (10-40) + \text{Frequency} (0-30) + \text{Impact} (0-30)$. |
-| **Independent Confidence Scoring [25-100]** | ✅ Complete | Decoupled from priority; calculated as $\text{Sample Size} (10-40) + \text{Data Completeness} (15-30) + \text{Consistency} (0-30)$. |
+| **Independent Confidence Scoring [25-100]** | ✅ Complete | Decoupled from priority; calculated as $\text{Sample Size} (15-50) + \text{Data Completeness} (10-30) + \text{Consistency} (0-20)$. |
 | **Minimum Sample Size Safeguards** | ✅ Complete | Rules enforce sample adequacy ($N \ge 5$ runs, 5 deliveries, or 10 AI calls). Insufficient sample size penalizes confidence to 10. |
 | **Deduplication & In-Place Updates** | ✅ Complete | Deterministic `dedupKey` updates active records in-place without generating duplicates. |
 | **Regeneration on Fresh Evidence** | ✅ Complete | Dismissed and resolved items regenerate as `NEW` only if qualifying evidence timestamps are strictly newer than resolution date. |
@@ -200,3 +200,4 @@ The interface features:
 FlowPilot Phase 9G is complete, fully tested, documented, and verified.
 
 **Phase 9H (Autonomous Remediation & Advanced Workflows) has not been started.** Awaiting explicit user approval before proceeding to the next milestone.
+

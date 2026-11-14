@@ -9,9 +9,9 @@ FlowPilot decouples **Priority Score** (how urgently a recommendation warrants a
    │         PRIORITY SCORE         │         │        CONFIDENCE SCORE        │
    │           [10 - 100]           │         │           [25 - 100]           │
    ├────────────────────────────────┤         ├────────────────────────────────┤
-   │  Base Severity     (10 - 40)   │         │  Sample Size Adequacy (10 - 40)│
-   │  Frequency Factor  (0 - 30)    │         │  Data Completeness    (15 - 30)│
-   │  Impact Magnitude  (0 - 30)    │         │  Temporal Consistency (0 - 30) │
+   │  Base Severity     (10 - 40)   │         │  Sample Size Adequacy (15 - 50)│
+   │  Frequency Factor  (0 - 30)    │         │  Data Completeness    (10 - 30)│
+   │  Impact Magnitude  (0 - 30)    │         │  Temporal Consistency (0 - 20) │
    └────────────────────────────────┘         └────────────────────────────────┘
 ```
 
@@ -63,18 +63,21 @@ The confidence score reflects statistical validity and evidence depth:
 
 $$\text{Confidence Score} = C_{\text{sample}} + C_{\text{completeness}} + C_{\text{consistency}}$$
 
-### Component 1: Sample Size Adequacy ($C_{\text{sample}}$)
-- $N < 3$ runs / samples: **10 points** (insufficient statistical depth)
+### Component 1: Sample Size Adequacy ($C_{\text{sample}}$) [15 – 50 pts]
+- $N < 3$ runs / samples: **15 points** (small sample penalty)
 - $3 \le N < 5$ runs: **25 points** (emerging trend)
-- $N \ge 5$ runs: **40 points** (statistically adequate sample)
+- $5 \le N < 10$ runs: **40 points** (adequate sample size)
+- $N \ge 10$ runs: **50 points** (statistically robust sample size)
 
-### Component 2: Telemetry Completeness ($C_{\text{completeness}}$)
-- Full step-level traces and timing available: **30 points**
-- Workflow terminal status without node traces: **20 points**
-- Aggregated or rolling buffer window: **15 points**
+### Component 2: Telemetry Completeness & Quality ($C_{\text{completeness}}$) [10 – 30 pts]
+Baseline is 30 points, with deductions for data limitations:
+- Deduct 10 points if unpriced AI models are present.
+- Deduct 10 points if the 500-record webhook buffer is truncated.
+- Deduct 10 points if cancelled execution ratio exceeds 20%.
+- Bounded minimum: **10 points**.
 
-### Component 3: Temporal Consistency ($C_{\text{consistency}}$)
-- Multi-run sustained pattern across distinct executions: **30 points**
+### Component 3: Temporal Consistency ($C_{\text{consistency}}$) [0 – 20 pts]
+- Multi-run sustained pattern across distinct executions: **20 points**
 - Intermittent or isolated single-execution occurrence: **0 points**
 
 ### Final Range & Confidence Tiers
@@ -83,3 +86,4 @@ $$\text{Confidence Score} = C_{\text{sample}} + C_{\text{completeness}} + C_{\te
   - `HIGH`: 80 – 100
   - `MEDIUM`: 50 – 79
   - `LOW`: 25 – 49
+

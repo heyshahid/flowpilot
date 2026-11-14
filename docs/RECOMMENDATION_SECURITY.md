@@ -35,3 +35,4 @@ To protect customer secrets and sensitive operational variables:
 - **Redacted Fields**: API tokens, authorization headers, passwords, bearer credentials, and private keys are never stored in `evidence` or `description`.
 - **Payload Truncation**: Evidence values are truncated to 500 characters and sanitized before persistence.
 - **Audit Logging**: All lifecycle transitions and manual evaluation triggers emit audit logs to `auditLogStore` with `resourceType: 'recommendation'`. Actor ID, IP address, and changed parameters are logged with sensitive fields redacted.
+

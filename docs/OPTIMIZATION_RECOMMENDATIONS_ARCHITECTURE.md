@@ -103,3 +103,4 @@ FlowPilot Phase 9G introduces the **Optimization Recommendations Engine**, an ev
    - Workflow architecture analysis checks genuine error ports (`error`, `onError`, `failure`) and explicitly excludes normal conditional decision paths (`false`, `else`, `default`).
 5. **Parallelization Uncertainty**:
    - Graph topology alone cannot guarantee task independence. Recommendations check for explicit node data references (`{{steps.node...}}`) and prominently label potential candidates as `[Candidate - Requires Verification]` with explicit caveats regarding side effects and external state.
+
