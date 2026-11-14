@@ -4,7 +4,9 @@
 **Repository:** `flowpilot`  
 **Active Branch:** `v1-development`  
 **Date:** November 14, 2026  
-**Test Runner:** Vitest v3.2.7 (Node.js v24.22.1, Target Deployment: Node 20 LTS)  
+**Test Runner:** Vitest v3.2.7  
+**Execution Environment:** Node.js v24.22.1 (Target Deployment: Node.js 20 LTS)  
+**Database Test Engine:** `@electric-sql/pglite` v0.5.16 (In-Process WASM PostgreSQL 16 Engine)  
 **Total Test Suites:** **17 Passed (17 total)**  
 **Total Tests:** **250 Passed (250 total, 0 failed, 0 skipped)**  
 **Production Build:** **107 routes compiled successfully (0 errors, 0 warnings)**  
@@ -36,16 +38,49 @@
 
 ---
 
-## 2. Phase 10B PostgreSQL Test Details (`tests/phase10b_postgres_database.test.ts`)
+## 2. PostgreSQL Testing Environment: Engine Capabilities & Server Status
 
-All 10 tests execute against an isolated in-process **PostgreSQL 16 engine** (`@electric-sql/pglite`):
+### 2.1 Test Execution Against In-Process PostgreSQL 16 WASM Engine
+The Phase 10B test suite (`tests/phase10b_postgres_database.test.ts`) executes against `@electric-sql/pglite` v0.5.16. PGlite is **not a mock or in-memory stub**; it is the official PostgreSQL 16 C codebase compiled directly to WebAssembly (WASM).
+- **Engine Capabilities Verified:**
+  1. Full PostgreSQL SQL parsing and execution.
+  2. Custom PostgreSQL `CREATE TYPE ... AS ENUM` support.
+  3. Relational integrity, foreign key references, and `ON DELETE CASCADE` mechanics.
+  4. Composite unique constraints (`@@unique([workspaceId, userId])`).
+  5. Multi-statement ACID transactions with explicit `ROLLBACK` on error.
+  6. Native `JSONB` data types and JSON path queries.
+  7. Disk-backed persistence surviving connection closure and reopening.
+
+### 2.2 External PostgreSQL Server Status (Honest Disclosure)
+- **Local Environment Check:**
+  - Local port 5432: No active PostgreSQL listener (`TCP connect to 127.0.0.1:5432 failed`).
+  - Command Line Tools: `docker` and `psql` are not installed on the local Windows PATH.
+- **Limitation & Disclosure:**
+  - Automated tests verify PostgreSQL 16 relational logic, SQL compliance, constraints, and persistence via PGlite.
+  - However, network socket communication, connection pooling (PgBouncer), SSL handshake, and high-concurrency client multiplexing against an external hosted PostgreSQL instance (e.g. AWS RDS, Supabase, Neon) were **not executed** in this local development turn.
+  - Staging verification with a live external PostgreSQL instance is documented as an infrastructure prerequisite before Phase 10E production cutover.
+
+---
+
+## 3. Node.js Environment Verification
+
+- **Current Local Runner:** `Node.js v24.22.1`
+- **Target Deployment Platform:** `Node.js 20 LTS`
+- **Compatibility Analysis:**
+  - The codebase utilizes standard ECMAScript modules (ESM), TypeScript 5.7, Next.js 15.1, and Prisma 6.19, all of which are officially supported on Node.js 20 LTS.
+  - No Node 24-specific unstable APIs (such as experimental permission models or unflagged experimental globals) are used.
+  - For full CI/CD assurance, a GitHub Actions matrix testing against `node-version: [20.x, 22.x]` is strongly recommended prior to deployment.
+
+---
+
+## 4. Phase 10B PostgreSQL Test Case Inventory (10 Tests)
 
 1. **PostgreSQL 16 Engine Connectivity:** Verified `SELECT version();` returns official PostgreSQL 16 engine banner.
 2. **Entity CRUD Lifecycle:** Verified `INSERT`, `SELECT`, `UPDATE`, and `DELETE` on `User` and `Workspace` tables.
 3. **Foreign-Key Constraints & Cascade Deletes:** Verified that deleting a parent `Workspace` automatically cascades to delete child `Workflow` and `Execution` rows, and inserting invalid foreign keys is rejected.
 4. **Unique Constraints:** Verified that duplicate emails in `User` and duplicate composite keys `(workspaceId, userId)` in `Membership` throw constraint violation errors.
 5. **ACID Transaction Rollback:** Verified that multi-table transactions that fail halfway roll back all changes atomically without partial commits.
-6. **Concurrent Parallel Writes:** Verified 20 simultaneous parallel inserts via `Promise.all` execute cleanly without deadlocks or row locks.
+6. **Concurrent Parallel Writes:** Verified simultaneous parallel inserts via `Promise.all` execute cleanly without deadlocks or row locks.
 7. **Workspace Isolation:** Verified queries for `ws_alpha` never return workflows belonging to `ws_beta`.
 8. **Restart Persistence:** Verified data persisted to disk survives closing and reopening the database connection.
 9. **Pre-Migration Snapshot & Checksums:** Verified SHA-256 calculation across all JSON source files.
