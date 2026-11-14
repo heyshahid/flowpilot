@@ -34,6 +34,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'quota:manage',
     'alert:read',
     'alert:manage',
+    'recommendation:read',
+    'recommendation:evaluate',
+    'recommendation:manage',
+    'recommendation:feedback',
   ],
   ADMIN: [
     'workspace:read',
@@ -65,6 +69,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'quota:manage',
     'alert:read',
     'alert:manage',
+    'recommendation:read',
+    'recommendation:evaluate',
+    'recommendation:manage',
+    'recommendation:feedback',
   ],
   EDITOR: [
     'workspace:read',
@@ -83,6 +91,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'usage:read',
     'quota:read',
     'alert:read',
+    'recommendation:read',
+    'recommendation:evaluate',
+    'recommendation:feedback',
   ],
   VIEWER: [
     'workspace:read',
@@ -96,6 +107,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'usage:read',
     'quota:read',
     'alert:read',
+    'recommendation:read',
   ],
 };
 

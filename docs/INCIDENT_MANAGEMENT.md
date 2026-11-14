@@ -57,3 +57,4 @@ Operational incidents progress through a deterministic three-phase lifecycle:
 * **RBAC Requirement**: `alert:manage`
 * **Request Body**: `{ "notes": "Remediated connection failure" }`
 * **Audit Event**: `alert.incident_resolved` logged to `AuditLogStore`.
+

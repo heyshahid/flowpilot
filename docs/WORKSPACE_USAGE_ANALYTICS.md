@@ -92,3 +92,4 @@ Time intervals are half-open `[from, to)` to guarantee strict non-overlapping ma
 * **Query Parameters**:
   * `days`: number of days (default: 30)
 * **Response**: Daily time-series array of `UsageTrendPoint` objects with execution counts, AI tokens, AI costs, and integration operations.
+

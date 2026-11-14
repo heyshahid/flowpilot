@@ -12,7 +12,8 @@ export type AuditResourceType =
   | 'webhook'
   | 'security'
   | 'quota'
-  | 'alert';
+  | 'alert'
+  | 'recommendation';
 
 export interface AuditLogRecord {
   id: string;

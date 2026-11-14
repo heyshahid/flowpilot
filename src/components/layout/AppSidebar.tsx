@@ -22,6 +22,7 @@ import {
   Users,
   Radio,
   Bell,
+  Lightbulb,
 } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
 
@@ -46,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Team', href: '/team', icon: Users },
   { name: 'Audit Logs', href: '/audit-logs', icon: ShieldCheck },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Recommendations', href: '/recommendations', icon: Lightbulb },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

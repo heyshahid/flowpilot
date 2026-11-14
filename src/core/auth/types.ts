@@ -40,7 +40,12 @@ export type Permission =
   | 'quota:manage'
   // Alert Rules & Incidents (Phase 9F)
   | 'alert:read'
-  | 'alert:manage';
+  | 'alert:manage'
+  // Optimization Recommendations Engine (Phase 9G)
+  | 'recommendation:read'
+  | 'recommendation:evaluate'
+  | 'recommendation:manage'
+  | 'recommendation:feedback';
 
 export interface UserRecord {
   id: string;

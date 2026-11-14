@@ -53,3 +53,4 @@ export interface AlertNotification {
 #### `PATCH /api/v1/alerts/notifications`
 * **RBAC Requirement**: `alert:read`
 * **Body**: `{ "id": "notif_123" }` to mark single notification as read, or `{ "markAllRead": true }` to mark all workspace notifications as read.
+

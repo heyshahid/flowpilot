@@ -31,4 +31,5 @@ Thumbs.db
 
 # Local storage data
 .data/
+*.tsbuildinfo
 

@@ -71,3 +71,4 @@ FlowPilot workspace quotas provide administrative control over infrastructure re
 }
 ```
 * **Audit Action**: `quota.updated` logged with actor context.
+
