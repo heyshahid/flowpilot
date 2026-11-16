@@ -1,7 +1,7 @@
-# FlowPilot Phase 10C: Implementation Checklist & Execution Roadmap
+# FlowPilot Phase 10C: Implementation Checklist & Controlled Execution Roadmap
 
 **Milestone:** Phase 10C — Authentication & Session Security  
-**Document:** Phase 10C-B Implementation Checklist & Execution Roadmap  
+**Document:** Phase 10C-B Sub-Phased Implementation Checklist & Roadmap (Reconciled & Hardened)  
 **Repository:** `flowpilot`  
 **Active Branch:** `v1-development`  
 **Date:** November 16, 2026  
@@ -16,114 +16,170 @@ Before Phase 10C-B implementation begins, ensure the following gates are cleared
 
 - [x] **Phase 10B Formally Closed:** PostgreSQL foundation, repository layer, and migration utilities accepted.
 - [x] **Phase 10C-A Assessment Accepted:** Architecture specification and STRIDE threat model reviewed.
-- [ ] **Project Owner Approval of Corrected Architecture:** Explicit authorization to begin Phase 10C-B.
+- [x] **7 Pre-Implementation Corrections Applied:** Test counts (14), rate limits, idle expiry, CSRF secrets, post-reset re-login, idempotent audit migration, and test timing assertions fully reconciled.
+- [ ] **Project Owner Authorization to Begin 10C-B1:** Explicit approval to start Sub-Phase 10C-B1 only.
 - [ ] **Execution Environment Verified:** Local Node.js v24.22.1 runner confirmed clean; target deployment Node 20 LTS.
 - [ ] **Backup Snapshot Created:** Pre-implementation snapshot of `.data/` and codebase established.
 
 ---
 
-## 2. Phase 10C-B Step-by-Step Implementation Roadmap
+## 2. Controlled Sub-Phase Execution Roadmap (6 Sub-Phases)
 
-### Step 1: Package Installation & Environment Configuration
-- [ ] Install `@node-rs/argon2` (high-performance Rust Argon2id bindings).
-- [ ] Configure environment variables in `.env.example` and `.env.local`:
+In accordance with the project owner's execution strategy, Phase 10C-B is divided into **six sequential sub-phases**. Each sub-phase concludes with an audit report and requires explicit approval before the next sub-phase begins.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      PHASE 10C-B EXECUTION PHASES                      │
+├────────────────────────────────────────────────────────────────────────┤
+│ 1. Phase 10C-B1: Security Foundation                                   │
+│    - Argon2id, token utilities, CSRF, rate limiter, env config        │
+│    - Review & Approval Gate ──►                                        │
+│                                                                        │
+│ 2. Phase 10C-B2: Database & Session Engine                             │
+│    - AuthToken schema, session repository, cookies, expiry & rotation │
+│    - Review & Approval Gate ──►                                        │
+│                                                                        │
+│ 3. Phase 10C-B3: Authentication Backend                                │
+│    - Register, login, verify email, reset password, logout, API routes │
+│    - Review & Approval Gate ──►                                        │
+│                                                                        │
+│ 4. Phase 10C-B4: Workspace Security & Audit                            │
+│    - AuthContextManager hardening, membership checks, RBAC, audit      │
+│    - Review & Approval Gate ──►                                        │
+│                                                                        │
+│ 5. Phase 10C-B5: Frontend Integration                                  │
+│    - Login, register, verify, reset screens, dynamic sidebar profile   │
+│    - Review & Approval Gate ──►                                        │
+│                                                                        │
+│ 6. Phase 10C-B6: Security Testing & Regression                         │
+│    - 14 security test scenarios, 250 regression tests, build audit     │
+│    - Final Phase 10C Closure ──►                                       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Sub-Phase 10C-B1: Security Foundation
+- [ ] **Dependencies:** Install `@node-rs/argon2` (high-performance Rust bindings for Argon2id).
+- [ ] **Environment Configuration:**
   - `FLOWPILOT_AUTH_MODE=session` (default)
   - `ALLOWED_ORIGINS=http://localhost:3000,https://app.flowpilot.dev`
   - `TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128`
-  - `SESSION_SECRET` (256-bit encryption key for CSRF tokens)
-
-### Step 2: Database Schema Migration (`AuthToken` Model)
-- [ ] Update `prisma/schema.prisma` with proposed `AuthToken` model (`EMAIL_VERIFICATION`, `PASSWORD_RESET`).
-- [ ] Run `npx prisma migrate diff` to generate SQL DDL migration `prisma/migrations/1_auth_tokens/migration.sql`.
-- [ ] Regenerate Prisma Client (`npx prisma generate`).
-
-### Step 3: Cryptography & Security Utilities (`src/lib/security/`)
-- [ ] Create `src/lib/security/argon2.ts`:
+  - `SESSION_SECRET` (256-bit secret, minimum 32 bytes)
+  - `SESSION_SECRET_PREVIOUS` (optional secondary key for zero-downtime rotation)
+- [ ] **Argon2id Utility (`src/lib/security/argon2.ts`):**
   - Configure OWASP parameters (`m=65536`, `t=3`, `p=4`).
-  - Precompute `DUMMY_HASH` for timing normalization on non-existent accounts.
-  - Implement hashing semaphore limiting concurrent hashes to 4 parallel jobs.
-- [ ] Create `src/lib/security/tokens.ts`:
-  - `generateSecureToken(bytes = 32)`: Returns 256-bit hex token.
+  - Precompute static `DUMMY_HASH` for timing normalization on non-existent accounts.
+  - Implement concurrency semaphore limiting parallel hashing operations to 4 jobs per process.
+- [ ] **Cryptographic Token Utilities (`src/lib/security/tokens.ts`):**
+  - `generateSecureToken(bytes = 32)`: Generates 256-bit cryptographic entropy.
   - `hashToken(rawToken: string)`: Computes SHA-256 hash.
-  - `timingSafeEqual(a: string, b: string)`: Constant-time string comparison.
-- [ ] Create `src/lib/security/csrf.ts`:
-  - Mint encrypted CSRF cookie token.
-  - Validate custom header `x-csrf-token` against active session.
-  - Validate `Origin` and `Referer` against trusted allowlist.
+  - `timingSafeEqual(a: string, b: string)`: Constant-time comparison.
+- [ ] **CSRF Protection Engine (`src/lib/security/csrf.ts`):**
+  - Mint encrypted HMAC-SHA256 CSRF token combining `sessionId + timestamp + nonce`.
+  - Validate custom header `x-csrf-token` against active session with 24-hour timestamp freshness.
+  - Dual-secret rotation support (`SESSION_SECRET` and `SESSION_SECRET_PREVIOUS`).
+  - Validate `Origin` and `Referer` against `ALLOWED_ORIGINS`.
+- [ ] **Rate Limiting Engine (`src/lib/security/rateLimiter.ts`):**
+  - Implement unified sliding-window limiter:
+    - Normal: up to 10 attempts / 1 min.
+    - Progressive delay: 11–20 attempts / 15 min (1s, 2s, 4s backoff).
+    - Hard block: >20 attempts / 15 min returns `HTTP 429`.
+    - Per-Account protection: 5 consecutive failed attempts challenges requesting IP and dispatches security alert email.
+  - Trusted reverse-proxy IP resolution via `TRUSTED_PROXY_CIDRS`.
+- [ ] **Sub-Phase 10C-B1 Review:** Submit foundation report and halt for review.
 
-### Step 4: Rate Limiting Subsystem (`src/lib/security/rateLimiter.ts`)
-- [ ] Implement `SlidingWindowRateLimiter`:
-  - Per-IP rate limiter (20 attempts / 15 min).
-  - Progressive throttling backoff (1s, 2s, 4s delay).
-  - Account protection trigger (5 consecutive failed attempts challenges requesting IP, dispatches security notice email).
-  - Define interface `DistributedRateLimiter` for seamless Redis upgrade in Phase 10D.
+---
 
-### Step 5: Session Management Engine (`src/lib/storage/postgres/sessionRepository.ts`)
-- [ ] Implement session CRUD:
-  - `createSession(userId, userAgent, ipAddress, ttlDays = 14)`: Generates raw token, stores SHA-256 hash.
-  - `validateSession(rawToken)`: Hashes token, checks expiration (`expiresAt > NOW()`), updates `lastActiveAt`.
+### Sub-Phase 10C-B2: Database & Session Engine
+- [ ] **Database Schema Update:**
+  - Update `prisma/schema.prisma` with proposed `AuthToken` model (`EMAIL_VERIFICATION`, `PASSWORD_RESET`).
+  - Generate migration `prisma/migrations/1_auth_tokens/migration.sql` via `prisma migrate diff`.
+  - Regenerate Prisma Client (`npx prisma generate`).
+- [ ] **Session Repository (`src/lib/storage/postgres/sessionRepository.ts`):**
+  - `createSession(userId, userAgent, ipAddress, ttlDays = 14)`: Generates raw token, writes SHA-256 hash.
+  - `validateSession(rawToken)`: Enforces **both** `expiresAt > NOW()` (14-day absolute lifetime) **and** `NOW() - lastActiveAt <= 2 hours` (2-hour idle timeout). Touches `lastActiveAt` at most once every 15 minutes.
   - `rotateSession(oldRawToken)`: Atomically invalidates old token and mints fresh token.
   - `revokeSession(rawToken)`: Deletes single session from database.
   - `revokeAllUserSessions(userId)`: Deletes all sessions for user.
-- [ ] Cookie helper (`src/lib/security/cookies.ts`):
-  - Serialize `__Host-fp_session` with `HttpOnly; Secure; SameSite=Lax; Path=/`.
-  - Fallback to `fp_session` when `process.env.NODE_ENV !== 'production'`.
+- [ ] **Cookie Helper (`src/lib/security/cookies.ts`):**
+  - Production HTTPS: `__Host-fp_session` (`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`).
+  - Development HTTP: `fp_session` fallback on localhost.
+- [ ] **Sub-Phase 10C-B2 Review:** Submit database & session engine report and halt for review.
 
-### Step 6: Hardening `AuthContextManager` (`src/core/auth/authContext.ts`)
-- [ ] Implement strict server-derived identity resolution:
-  - Hardcode check: `if (process.env.NODE_ENV === 'production')` -> strictly strip and reject `x-user-id` and `x-workspace-id`.
-  - Validate session cookie against `Session` table.
+---
+
+### Sub-Phase 10C-B3: Authentication Backend Routes
+- [ ] **Email Provider Adapter (`src/lib/email/`):**
+  - Interface `EmailAdapter`: `sendVerificationEmail`, `sendPasswordResetEmail`, `sendSecurityAlert`.
+  - `DevelopmentEmailAdapter`: Logs masked recipient and verification link to debug logger; stores last token in memory fixture for tests. Zero raw secrets in production logs.
+- [ ] **Registration Route (`POST /api/v1/auth/register`):**
+  - Input validation via Zod, Argon2id password hash, user created with `status: PENDING_VERIFICATION`.
+  - Default workspace provisioned, user added as `OWNER`.
+  - Verification token hash stored in `AuthToken` with 24h expiration.
+  - Restricted verification session cookie issued.
+- [ ] **Login Route (`POST /api/v1/auth/login`):**
+  - Rate-limit check, user lookup, dummy hash fallback on missing account, Argon2id verification.
+  - Rotates session token, sets `__Host-fp_session` cookie, emits `AUTH_LOGIN_SUCCESS` audit event.
+- [ ] **Email Verification Route (`POST /api/v1/auth/verify-email`):**
+  - Validates token hash, marks token used atomically (`usedAt = NOW()`).
+  - Transitions `User.status` to `ACTIVE`, sets `emailVerifiedAt = NOW()`, rotates session token.
+- [ ] **Resend Verification Route (`POST /api/v1/auth/resend-verification`):**
+  - Rate-limited to max 3 resends per hour per email.
+- [ ] **Password Reset Routes (`POST /api/v1/auth/forgot-password` & `POST /api/v1/auth/reset-password`):**
+  - Forgot password returns constant-time generic response.
+  - Reset password validates single-use token, updates password hash, **revokes all active sessions**, and clears session cookies.
+  - User is required to explicitly log in again with new password.
+- [ ] **Logout Route (`POST /api/v1/auth/logout`):**
+  - Deletes active session row and clears cookie (`max-age=0`).
+- [ ] **Sub-Phase 10C-B3 Review:** Submit backend routes report and halt for review.
+
+---
+
+### Sub-Phase 10C-B4: Workspace Security & Audit Hardening
+- [ ] **Harden `AuthContextManager` (`src/core/auth/authContext.ts`):**
+  - Hardcode production check: `if (process.env.NODE_ENV === 'production')` -> strictly strip and reject `x-user-id` and `x-workspace-id`.
+  - Validate session cookie and enforce 2-hour idle timeout.
   - Check `User.status`:
-    - If `PENDING_VERIFICATION`: Grant restricted session scope (verification endpoints only; reject workspace mutations with `HTTP 403 EMAIL_VERIFICATION_REQUIRED`).
-    - If `SUSPENDED`: Reject with `HTTP 403 Forbidden`.
-    - If `ACTIVE`: Full access.
-  - Resolve active workspace:
-    - Target workspace identified from URL path or `x-flowpilot-workspace` header.
-    - Query `Membership` table for `(workspaceId, userId)`.
-    - Assert `membership.status === 'active'` and `workspace.isArchived === false`.
-    - Enforce permissions via `RBACManager.assertPermission()`.
+    - `PENDING_VERIFICATION`: Grant restricted session scope (verification endpoints only; reject workspace mutations with `HTTP 403 EMAIL_VERIFICATION_REQUIRED`).
+    - `SUSPENDED`: Reject with `HTTP 403 Forbidden`.
+    - `ACTIVE`: Full access.
+  - Workspace resolution: Target workspace from URL path or `x-flowpilot-workspace` validated against `Membership` table.
+  - Permission assertion: Enforce `RBACManager.assertPermission()` across all workspace routes.
+- [ ] **Audit Logging Integrity:**
+  - Enforce append-only permissions and trigger immutability.
+  - Implement **idempotent import** of the 33 historical records from `recommendation_history.json` into `AuditLog` using `WHERE id = hist_...` to guarantee zero duplication on re-runs.
+- [ ] **Sub-Phase 10C-B4 Review:** Submit workspace & audit hardening report and halt for review.
 
-### Step 7: Email Provider Adapter (`src/lib/email/`)
-- [ ] Define `EmailAdapter` interface.
-- [ ] Implement `DevelopmentEmailAdapter`: Logs masked email and verification URLs to debug logger without exposing raw secrets in stdout.
-- [ ] Implement production adapter scaffolding (Resend / AWS SES).
+---
 
-### Step 8: Authentication API Routes (`src/app/api/v1/auth/`)
-- [ ] `POST /api/v1/auth/register`: Zod validation, password hashing, user & workspace creation, verification token issuance, restricted session cookie.
-- [ ] `POST /api/v1/auth/login`: Rate-limiting check, user lookup, dummy hash fallback, Argon2id verification, session minting, cookie dispatch.
-- [ ] `POST /api/v1/auth/logout`: Single-session deletion, cookie clear.
-- [ ] `GET /api/v1/auth/me`: Returns verified user profile, active workspace, memberships, and verification status.
-- [ ] `POST /api/v1/auth/verify-email`: Validates token hash, marks token used, updates user status to `ACTIVE`, rotates session token.
-- [ ] `POST /api/v1/auth/resend-verification`: Rate-limited resend of verification email.
-- [ ] `POST /api/v1/auth/forgot-password`: Constant-time response, 1-hour reset token issuance.
-- [ ] `POST /api/v1/auth/reset-password`: Validates reset token, updates password hash, revokes all active sessions for user.
-- [ ] `POST /api/v1/auth/sessions/revoke-all`: Mass session revocation across all devices.
-
-### Step 9: Historical Audit Preservation (`recommendation_history.json`)
-- [ ] Update migration utility to import all 33 records from `recommendation_history.json` into `AuditLog` (`resourceType = 'recommendation'`), preserving exact historical timestamps, actor IDs, actions, and details.
-
-### Step 10: User Interface Integration
-- [ ] Create `/login` page with email & password form, error states, and rate-limit backoff countdown.
+### Sub-Phase 10C-B5: Frontend Integration
+- [ ] Create `/login` page with email & password form, error states, and progressive backoff countdown.
 - [ ] Create `/register` page with name, email, password strength meter, and terms agreement.
 - [ ] Create `/verify-email` page displaying verification status or resend button.
 - [ ] Create `/forgot-password` and `/reset-password` pages.
 - [ ] Update `AppSidebar.tsx` footer: Replace hardcoded profile with dynamic session user data, workspace switcher, and logout trigger.
+- [ ] **Sub-Phase 10C-B5 Review:** Submit frontend integration report and halt for review.
 
-### Step 11: Security Verification & Automated Testing (`tests/phase10c_auth_security.test.ts`)
-- [ ] Test 1: Argon2id password hashing and verification accuracy.
-- [ ] Test 2: Dummy hash timing normalization on non-existent accounts.
-- [ ] Test 3: Public user registration and default workspace provisioning.
-- [ ] Test 4: Restricted verification session enforcement (blocks workflow routes, allows verify routes).
-- [ ] Test 5: Email verification token lifecycle (valid, expired, already-used, rate-limited resend).
-- [ ] Test 6: Login and secure session cookie issuance (`HttpOnly`, `Secure`, `SameSite=Lax`).
-- [ ] Test 7: Rejection of forged/spoofed `x-user-id` headers in production mode.
-- [ ] Test 8: Cross-workspace tenant isolation (proves User A cannot access Workspace B).
-- [ ] Test 9: Password reset flow and mass session revocation.
-- [ ] Test 10: Brute-force rate limiting and progressive throttling backoff.
-- [ ] Test 11: CSRF origin and token validation on mutating requests.
-- [ ] Test 12: Historical recommendation audit log retention verification.
+---
 
-### Step 12: Regression & Production Build Audit
-- [ ] Execute `npm test` to verify all 250 existing tests pass + 12 new Phase 10C tests pass (262+ tests total).
+### Sub-Phase 10C-B6: Security Testing & Regression Audit
+- [ ] Implement all **14 security test scenarios** in `tests/phase10c_auth_security.test.ts`:
+  1. Argon2id password hashing and verification accuracy.
+  2. Dummy hash timing normalization (relative execution verification).
+  3. Public user registration and default workspace provisioning.
+  4. Restricted verification session enforcement (`EMAIL_VERIFICATION_REQUIRED`).
+  5. Email verification token lifecycle (valid, expired, already-used, rate-limited resend).
+  6. Login and secure session cookie issuance (`HttpOnly`, `Secure`, `SameSite=Lax`).
+  7. Rejection of forged/spoofed `x-user-id` headers in production mode.
+  8. Cross-workspace tenant isolation (proves User A cannot access Workspace B).
+  9. Vertical RBAC enforcement (Viewers cannot mutate workflows).
+  10. Session rotation on privilege elevation.
+  11. Password reset, mass session revocation, and re-login enforcement.
+  12. Brute-force rate limiting and progressive throttling backoff.
+  13. CSRF origin and token validation on mutating requests.
+  14. Idempotent historical recommendation audit log retention verification.
+- [ ] Execute `npm test` to verify **264/264 tests pass across 18 test suites** (250 existing regression + 14 new Phase 10C security tests).
 - [ ] Execute `npx tsc --noEmit` to verify type safety.
 - [ ] Execute `npm run build` to verify clean production build across 107+ routes.
+- [ ] **Phase 10C Final Closure:** Submit final verification report and halt for approval.

@@ -1,11 +1,11 @@
 # FlowPilot Phase 10C: Final Authentication Architecture Specification
 
 **Milestone:** Phase 10C — Authentication & Session Security  
-**Document:** Final Authentication Architecture Specification  
+**Document:** Final Authentication Architecture Specification (Reconciled & Hardened)  
 **Repository:** `flowpilot`  
 **Active Branch:** `v1-development`  
 **Date:** November 16, 2026  
-**Status:** **Architectural Corrections Applied — Assessment Complete**  
+**Status:** **Architectural Corrections Applied — Ready for Sub-Phased Execution**  
 **Boundary Statement:** **Zero production code changes executed; all existing functionality, 250 tests, and 107 routes preserved**  
 
 ---
@@ -33,7 +33,10 @@ FlowPilot is transitioning from a simulated developer identity prototype into a 
 [ 3. Extract Session Cookie ] ──► Read `__Host-fp_session` (HTTPS) or `fp_session` (dev)
                                             │
                                             ▼
-[ 4. Hash Token & DB Lookup ] ──► Compute SHA-256; query `Session` table where `expiresAt > NOW()`
+[ 4. Hash Token & DB Lookup ] ──► Compute SHA-256; query `Session` table
+                                            │
+                                            ├── Check 1: `expiresAt > NOW()` (14-day absolute lifetime)
+                                            └── Check 2: `NOW() - lastActiveAt <= 2 hours` (2-hour idle timeout)
                                             │
                                             ▼
 [ 5. Check User & Session State ]
@@ -92,7 +95,7 @@ The previous draft contained an architectural contradiction: new users were crea
 
 ---
 
-## 3. CSRF and CORS Security Architecture
+## 3. CSRF and CORS Security Architecture & Secret Design
 
 Content-Type checks (such as `Content-Type: application/json`) alone do **not** provide complete CSRF protection against modern browser exploits or top-level navigational attacks. FlowPilot implements defense-in-depth:
 
@@ -103,16 +106,22 @@ Content-Type checks (such as `Content-Type: application/json`) alone do **not** 
 - **Rejection Policy:** If the incoming `Origin` or `Referer` header is present but does not match the allowlist, the request is terminated immediately with `HTTP 403 Forbidden` (`CSRF_ORIGIN_MISMATCH`).
 
 ### 3.2 Handling Missing Origin / Referer Headers
-- In modern browsers, certain cross-origin requests omit `Referer` or `Origin` due to referrer policies.
 - For **browser-originated cookie requests**: If both `Origin` and `Referer` are missing on a state-changing route with a session cookie, the request is rejected unless accompanied by a verified CSRF token.
 - For **machine-to-machine / API clients** (e.g. CLI tools, external webhooks, worker daemons): Authenticated via scoped Bearer API tokens (`Authorization: Bearer fp_live_...`). These requests do not use browser session cookies and are validated against the cryptographic API token rather than the browser CSRF policy.
 
-### 3.3 Double-Submit Encrypted CSRF Token Validation
-For state-changing cookie-authenticated requests:
-1. On initial session minting, the server issues an encrypted CSRF token stored in a separate readable cookie (`fp_csrf_token`) with attributes `SameSite=Lax; Secure; Path=/`.
-2. Browser client reads this cookie and includes it in custom header `x-csrf-token` on mutating requests.
-3. The server decrypts and verifies the token against the active session ID.
-4. Requests with mismatched or missing tokens return `HTTP 403 Forbidden` (`INVALID_CSRF_TOKEN`).
+### 3.3 CSRF Secret Architecture & Double-Submit Token Design
+1. **Secret Configuration (`SESSION_SECRET`):**
+   - Configured via environment variable `SESSION_SECRET` (minimum 32 bytes / 256 bits of cryptographic entropy).
+   - Supports zero-downtime key rotation via dual secrets: `SESSION_SECRET` (active) and `SESSION_SECRET_PREVIOUS` (deprecated verification fallback).
+2. **Token Construction:**
+   - The CSRF token is an HMAC-SHA256 signature over the session ID, timestamp, and a random cryptographic nonce:
+     `token = base64url(sessionId + ":" + timestamp + ":" + nonce + ":" + hmac(sessionId + ":" + timestamp + ":" + nonce, SESSION_SECRET))`
+3. **Cookie & Header Delivery:**
+   - Minted on session creation and set in readable cookie `fp_csrf_token` (`SameSite=Lax; Secure; Path=/; Max-Age=1209600`).
+   - Browser client reads `fp_csrf_token` and transmits it in request header `x-csrf-token` on mutating requests.
+4. **Server-Side Validation:**
+   - Server extracts `x-csrf-token`, verifies HMAC signature against `SESSION_SECRET` (or `SESSION_SECRET_PREVIOUS`), asserts timestamp freshness (max 24 hours), and validates that the `sessionId` embedded in the token matches the active session.
+   - Missing or mismatched tokens return `HTTP 403 Forbidden` (`INVALID_CSRF_TOKEN`).
 
 ### 3.4 CORS Configuration
 - `Access-Control-Allow-Origin` is dynamically set to the verified matching origin from the allowlist.
@@ -123,30 +132,28 @@ For state-changing cookie-authenticated requests:
 
 ---
 
-## 4. Rate Limiting & Account Protection Architecture
+## 4. Rate Limiting & Account Protection Architecture (Unified Policy)
 
-### 4.1 Dual-Tier Rate Limiting Strategy
-1. **Development & Single-Instance Testing:**
-   - In-memory sliding-window limiter using fixed ring buffers and timestamp queues.
-   - Cleared between unit test suites.
-2. **Production Multi-Instance Deployment (Launch Prerequisite):**
-   - Distributed sliding-window limiter backed by Redis (utilizing atomic `ZADD`, `ZREMRANGEBYSCORE`, and `ZCARD` Redis scripts).
-   - Coordinates rate limits across all container replicas and serverless function instances.
+### 4.1 Consistent Multi-Tier Rate Limiting Policy
+To eliminate discrepancies between documentation and implementation, FlowPilot defines a **single, unified rate-limiting policy**:
+
+| Enforcement Tier | Threshold Window | Action / Result | Scope |
+| :--- | :--- | :--- | :--- |
+| **Normal Execution** | Up to 10 attempts / 1 minute | Immediate execution (~80–120ms) | Per IP |
+| **Progressive Delay** | 11 to 20 attempts / 15 minutes | Enforces progressive artificial delay (1s, 2s, 4s backoff) | Per IP |
+| **Hard IP Throttling** | > 20 attempts / 15 minutes | Request rejected with `HTTP 429 Too Many Requests` | Per IP |
+| **Account Protection** | 5 consecutive failed password attempts | Requesting IP challenged with backoff / CAPTCHA; security alert email dispatched to owner | Per Account + IP |
+| **Password Reset** | Max 3 requests / 1 hour | Request rejected with `HTTP 429 Too Many Requests` | Per Account |
+| **Email Resend** | Max 3 requests / 1 hour | Request rejected with `HTTP 429 Too Many Requests` | Per Account |
 
 ### 4.2 Progressive Throttling vs. Permanent Account Lockout
 > [!WARNING]
 > **Anti-Denial-of-Service Policy:** Permanently locking an account after 5 failed attempts allows attackers to deliberately lock legitimate users out of their accounts (Denial of Service).
 
 FlowPilot implements **progressive throttling with IP-account separation**:
-- **Layer 1 (Per-IP Throttle):**
-  - Up to 10 attempts per minute per IP: Normal execution (~80–120ms).
-  - 11–20 attempts per minute per IP: Progressive delay enforced (1s, 2s, 4s backoff).
-  - >20 attempts per 15 minutes per IP: IP blocked with `HTTP 429 Too Many Requests`.
-- **Layer 2 (Per-Account Protection):**
-  - 1–4 failed password attempts on a specific email: Normal failure response.
-  - 5 consecutive failed attempts on an email: The *requesting IP* is challenged with a mandatory CAPTCHA or temporary 15-minute backoff.
-  - The legitimate account owner is **not** locked out globally from their own trusted devices. An email alert is dispatched: `"Unusual login attempts detected on your FlowPilot account"`.
-  - Global account suspension requires administrative intervention or manual password reset.
+- If an account experiences 5 consecutive bad passwords, the *requesting IP* is challenged with progressive backoff and temporary lockout.
+- The legitimate account owner is **not** globally locked out from their own trusted devices/IPs. An email alert is dispatched: `"Unusual login attempts detected on your FlowPilot account"`.
+- Global account suspension requires administrative intervention or manual password reset.
 
 ### 4.3 Reverse-Proxy IP Security
 - The server reads client IP addresses via `x-forwarded-for` **only** if the immediate socket remote address matches a configured `TRUSTED_PROXY_CIDRS` allowlist (e.g. Cloudflare IP ranges, AWS ALB CIDRs, internal VPC).
@@ -157,6 +164,7 @@ FlowPilot implements **progressive throttling with IP-account separation**:
 - **Queueing:** Additional simultaneous login requests enter a short FIFO queue (max depth: 16, timeout: 3 seconds).
 - **Overload Shedding:** If the queue is saturated, the server immediately returns `HTTP 429 Too Many Requests` (or `HTTP 503 Service Unavailable`), protecting the CPU and preventing denial-of-service starvation of workflow executions.
 - **Memory Footprint:** 4 concurrent operations × 64 MiB = **256 MiB maximum memory allocated to password hashing**, leaving the remaining system RAM for workflow processing.
+- **Production Redis Implementation:** While single-instance dev uses an in-memory sliding window, distributed Redis rate limiting is established as a formal launch prerequisite for multi-instance production.
 
 ---
 
@@ -236,8 +244,9 @@ An ordinary PostgreSQL table row is **not** inherently immutable. Any database s
      ```
 3. **Sensitive Data Redaction:**
    - All audit event payloads pass through the recursive secret sanitizer before insertion, replacing `password`, `token`, `secret`, `credential`, and `key` values with `[REDACTED]`.
-4. **Historical Event Retention (`recommendation_history.json`):**
-   - All 33 historical recommendation records from Phase 9G will be imported into `AuditLog` with `resourceType = 'recommendation'`, preserving original timestamps, actor IDs, actions, and details verbatim.
+4. **Strictly Idempotent Historical Migration (`recommendation_history.json`):**
+   - The 33 historical recommendation records from Phase 9G will be imported into `AuditLog` using a **deterministic idempotency key** (`WHERE id = hist_...`).
+   - If a record with that `id` already exists, the insert query skips it (`ON CONFLICT (id) DO NOTHING`). Re-running migration scripts will **never** generate duplicate historical records.
 5. **Production External Export (Enterprise Launch Prerequisite):**
    - For enterprise compliance (SOC 2, ISO 27001), audit events will be streamed asynchronously to an external Write-Once-Read-Many (WORM) sink (e.g. AWS CloudWatch with S3 Object Lock or Google Cloud Audit Logs).
 
@@ -258,27 +267,66 @@ To mitigate timing-based account enumeration where an attacker compares server r
    `DUMMY_HASH = await argon2.hash('FlowPilotDummyPasswordToNormalizeTiming123!', ...)`
 2. When a user submits a login request for an email that **does not exist** in the database, the server executes:
    `await argon2.verify(DUMMY_HASH, inputPassword)`
-3. **Result:** Both valid and invalid email requests execute full Argon2id verification, keeping response latency in the same ~80–120ms distribution and eliminating timing discrepancy as an account discovery vector.
-4. **Honest Timing Disclosure:** We do **not** claim mathematically identical constant-time behavior across all network hops, but application-layer processing variance between existing and non-existing accounts is neutralized.
+3. **Test Assertion Policy (No Brittle Fixed MS Ranges):**
+   - In automated test suites, timing assertions must **not** rely on rigid millisecond boundaries (e.g. strict 80–120ms pass/fail), as CI runners and varied host environments exhibit natural timing jitter.
+   - The primary test assertion verifies that the **dummy hash verification path was genuinely invoked** and that response times for valid and invalid emails are of the same order of magnitude (relative ratio within 2x variance).
 
 ---
 
 ## 8. Session Security & Lifecycle Management
 
-### 8.1 Session Token Rotation
+### 8.1 Dual Expiration Enforcement in `validateSession()`
+To ensure both inactivity and absolute session limits are rigorously enforced:
+```typescript
+public async validateSession(rawToken: string): Promise<SessionRecord | null> {
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const session = await this.sessionStore.findByTokenHash(tokenHash);
+
+  if (!session) return null;
+
+  const now = Date.now();
+  const expiresAtMs = new Date(session.expiresAt).getTime();
+  const lastActiveAtMs = new Date(session.lastActiveAt).getTime();
+
+  // 1. Absolute Expiration Check (14 days)
+  if (now > expiresAtMs) {
+    await this.sessionStore.delete(session.id);
+    return null;
+  }
+
+  // 2. Idle Timeout Check (2 hours)
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  if (now - lastActiveAtMs > TWO_HOURS_MS) {
+    await this.sessionStore.delete(session.id);
+    return null;
+  }
+
+  // 3. Update activity timestamp (throttled to once every 15 minutes)
+  const FIFTEEN_MINS_MS = 15 * 60 * 1000;
+  if (now - lastActiveAtMs > FIFTEEN_MINS_MS) {
+    await this.sessionStore.touch(session.id, new Date(now));
+  }
+
+  return session;
+}
+```
+
+### 8.2 Password Reset Session Invalidation & Re-Login Policy
+> [!CRITICAL]
+> **Post-Reset Re-Login Requirement:** Upon successful password reset (`POST /api/v1/auth/reset-password`), the server immediately deletes **all** active sessions for that user (`DELETE FROM "Session" WHERE "userId" = $1`) and clears the session cookie (`max-age=0`).
+> 
+> **No automatic session is issued after a password reset.** The user must explicitly log in again with their new password. This ensures that an attacker who may have intercepted a reset link cannot immediately gain an active authenticated browser session.
+
+### 8.3 Session Rotation
 To eliminate session fixation vulnerabilities:
 - **On Login:** A fresh session token and database record are minted; any existing pre-authentication cookie is overwritten.
-- **On Password Change:** All existing sessions for that user are deleted from PostgreSQL (`DELETE FROM "Session" WHERE "userId" = $1`), and a single new session token is issued for the current client.
+- **On Password Change:** All existing sessions for that user are deleted from PostgreSQL, and the user is redirected to login.
 - **On Email Change or Role Demotion:** Active sessions are refreshed to reload new permission scopes.
 
-### 8.2 Expiration Policy & Remember-Device Decision
-- **Idle Expiration:** 2 hours of inactivity. The server checks `lastActiveAt`; if `NOW() - lastActiveAt > 2 hours`, the session is rejected and deleted.
-- **Absolute Expiration:** 14 days maximum from `createdAt`.
-- **Remember-Device Decision:**
-  > [!NOTE]
-  > **Release Policy:** The "Remember this device" checkbox is **omitted from the Phase 10C UI release**. Advertising a checkbox that does not alter security controls creates false expectations. All sessions consistently adhere to the secure 14-day absolute / 2-hour idle policy.
+### 8.4 Remember-Device Decision
+- The "Remember this device" checkbox is **omitted from the Phase 10C UI release**. Advertising a checkbox that does not alter security controls creates false expectations. All web sessions consistently adhere to the secure 14-day absolute / 2-hour idle policy.
 
-### 8.3 Cookie Attributes Summary
+### 8.5 Cookie Attributes Summary
 - **Cookie Name:** `__Host-fp_session` (Production HTTPS) / `fp_session` (Local dev HTTP)
 - **HttpOnly:** `true` (Inaccessible to DOM / JavaScript)
 - **Secure:** `true` (Enforced in production TLS)
@@ -309,19 +357,32 @@ Under no circumstances does FlowPilot trust client-supplied roles, ownership cla
 ## 10. Test Authentication Isolation & Zero-Leakage Guarantee
 
 ### 10.1 Production Hardening: Absolute Rejection of Mock Headers
-To ensure that development mock headers (`x-user-id`, `x-workspace-id`) can **never** be exploited in production:
+To ensure that development mock headers (`x-user-id`, `x-workspace-id`) can **never** be exploited in production, the code enforces a dual-lock check:
 ```typescript
 // Hardcoded production guard inside AuthContextManager
-if (process.env.NODE_ENV === 'production') {
-  // In production, NEVER check or trust mock headers
-  return this.resolveFromSessionCookie(req);
+export class AuthContextManager {
+  public static async resolve(req?: NextRequest): Promise<AuthContext> {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    // 1. In production, mock headers are completely forbidden and stripped
+    if (isProduction) {
+      if (req?.headers.has('x-user-id') || req?.headers.has('x-workspace-id')) {
+        // Silently strip or reject; never read
+      }
+      return this.resolveFromSessionCookie(req);
+    }
+
+    // 2. In non-production, only accept mock headers if test auth flag is explicitly set
+    if (process.env.FLOWPILOT_TEST_AUTH === 'allow_mock_headers') {
+      return this.resolveMockTestContext(req);
+    }
+
+    // 3. Default fallback: require real session even in dev
+    return this.resolveFromSessionCookie(req);
+  }
 }
 ```
-Even if an operator accidentally configures `FLOWPILOT_TEST_AUTH=mock` in a production environment, the `NODE_ENV === 'production'` hard check overrides it and forces strict session verification.
-
-### 10.2 Test Suite Migration Path
-- In test environments (`NODE_ENV === 'test'`), existing Phase 1–9 tests will utilize an explicit test environment flag (`FLOWPILOT_TEST_AUTH=allow_mock_headers`) to preserve the 240-test baseline without modifying existing test files.
-- New Phase 10C tests will use a real authenticated request factory `createTestSession(user, workspace)` to test real session minting, cookie validation, and header rejection.
+Even if an operator accidentally configures `FLOWPILOT_TEST_AUTH=allow_mock_headers` in a production environment, the `isProduction` hard check overrides it and prevents mock header execution.
 
 ---
 
@@ -348,17 +409,21 @@ export interface EmailAdapter {
 
 ## 12. Explicit Decision Register
 
-| Category | Item | Status | Justification / Notes |
+| Category | Decision / Item | Status | Justification / Notes |
 | :--- | :--- | :---: | :--- |
 | **Approved Decision** | Database-Backed Sessions | **APPROVED** | Sovereign control, instant session revocation, zero vendor lock-in. |
 | **Approved Decision** | Argon2id Hashing | **APPROVED** | OWASP recommended (64 MiB, 3 iterations, 4 parallelism); resistant to GPU attacks. |
 | **Approved Decision** | `__Host-` Prefixed Cookies | **APPROVED** | Guarantees HTTPS-only, host-domain origin, and path isolation. |
 | **Approved Decision** | Server-Derived Identity | **APPROVED** | Strips `x-user-id` and `x-workspace-id`; derives identity strictly from session. |
 | **Approved Decision** | Restricted Verification Session | **APPROVED** | Resolves registration/verification conflict; blocks core workflow operations until verified. |
-| **Approved Decision** | Progressive Throttling | **APPROVED** | Prevents denial-of-service lockout against legitimate account owners. |
+| **Approved Decision** | Dual Expiration in validateSession | **APPROVED** | Enforces both 14-day absolute lifetime and 2-hour idle timeout on every lookup. |
+| **Approved Decision** | Re-Login After Password Reset | **APPROVED** | Zero automatic session issuance post-reset; user must re-authenticate with new password. |
+| **Approved Decision** | Unified Rate Limiting Policy | **APPROVED** | 10/min normal, 11-20/15min progressive backoff, >20/15min hard block, 5/account security challenge. |
+| **Approved Decision** | Idempotent Audit Migration | **APPROVED** | Unique ID check (`id = hist_...`) prevents duplicate records on re-runs. |
+| **Approved Decision** | Relative Timing Test Assertions | **APPROVED** | Verifies dummy hash path execution without brittle millisecond CI flakiness. |
 | **Approved Decision** | Omit "Remember Me" in v1 | **APPROVED** | Consistent 14-day absolute / 2-hour idle session policy without false UI claims. |
 | **Proposed Detail** | `AuthToken` Prisma Model | **PROPOSED** | Persists email verification and password reset token hashes with expiration. |
-| **Proposed Detail** | Double-Submit CSRF Cookie | **PROPOSED** | Defense-in-depth along with SameSite and strict Origin allowlist. |
+| **Proposed Detail** | Double-Submit CSRF Cookie | **PROPOSED** | HMAC-SHA256 signature using `SESSION_SECRET` with dual-secret rotation. |
 | **Unresolved Dependency** | External SMTP / Resend Credentials | **PENDING** | Required for live email delivery; mock adapter used in development. |
 | **Launch Prerequisite** | Distributed Redis Rate Limiter | **PREREQUISITE** | Must be deployed in Phase 10D before opening multi-instance public SaaS traffic. |
 | **Launch Prerequisite** | External WORM Audit Export | **PREREQUISITE** | Required for enterprise compliance export before public GA. |
