@@ -434,6 +434,9 @@ describe('Phase 10C-B4.4: High-Risk Unprotected Route Migration & Storage Scopin
       expect(res.status).toBe(403);
       const data = await res.json();
       expect(data.code).toBe('WORKSPACE_ISOLATION_VIOLATION');
+
+      // Clean up schedule so it doesn't linger in .data/schedules.json
+      await scheduleStore.delete(saved.id, 'ws_tenant_b');
     });
   });
 

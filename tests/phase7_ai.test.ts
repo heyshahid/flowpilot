@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { aiProviderRegistry } from '../src/core/ai/aiProviderRegistry';
 import { MockAIProvider } from '../src/core/ai/providers/mockProvider';
 import { WorkflowGenerator } from '../src/core/ai/workflowGenerator';
@@ -63,7 +63,11 @@ describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
     });
 
     it('should resolve platform AI provider keys via system mechanism without touching tenant credentials', async () => {
-      // Save a tenant credential with openai integrationId
+      // 1. Set a known platform API key in environment
+      const originalOpenAIKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = 'sk-platform-official-key-99999';
+
+      // 2. Save a different tenant API key in tenant credential store
       await credentialStore.save({
         name: 'Tenant OpenAI Key',
         integrationId: 'openai',
@@ -72,10 +76,31 @@ describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
         data: { apiKey: 'sk-tenant-secret-key-12345' },
       });
 
-      // Confirm aiProviderRegistry does not leak or read tenant credentials
-      const resolvedKey = aiProviderRegistry.getApiKeyForProvider('openai');
-      // Must never return the tenant key
-      expect(resolvedKey).not.toBe('sk-tenant-secret-key-12345');
+      // 3. Spy on tenant credential listing methods
+      const listSpy = vi.spyOn(credentialStore, 'list');
+      const listSyncSpy = vi.spyOn(credentialStore, 'listSync');
+
+      try {
+        // 4. Resolve provider key through aiProviderRegistry
+        const resolvedKey = aiProviderRegistry.getApiKeyForProvider('openai');
+
+        // 5. Verify the returned key strictly equals the platform key, not the tenant key
+        expect(resolvedKey).toBe('sk-platform-official-key-99999');
+        expect(resolvedKey).not.toBe('sk-tenant-secret-key-12345');
+
+        // 6. Verify tenant credential listing methods were NEVER invoked
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(listSyncSpy).not.toHaveBeenCalled();
+      } finally {
+        // 7. Clean up tenant credential, restore environment variables and mocks
+        listSpy.mockRestore();
+        listSyncSpy.mockRestore();
+        if (originalOpenAIKey === undefined) {
+          delete process.env.OPENAI_API_KEY;
+        } else {
+          process.env.OPENAI_API_KEY = originalOpenAIKey;
+        }
+      }
     });
   });
 
