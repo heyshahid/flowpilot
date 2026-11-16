@@ -1,12 +1,14 @@
 /**
  * FlowPilot Perimeter Edge Middleware
- * Phase 10C-B4.3: Edge Middleware & Session Validation
+ * Phase 10C-B4.3: Edge Middleware & Session Validation (Security Hardened)
  *
- * Implements stateless perimeter defense for FlowPilot:
+ * Implements strict stateless perimeter defense for FlowPilot:
  * 1. Early rejection: 401 JSON for protected APIs, 307 redirect for protected UI pages when session cookie is missing.
- * 2. Authoritative header sanitization: Strips untrusted identity headers (x-user-id, x-user-role, x-workspace-id, x-membership-role).
- * 3. Route classification: Public auth and ingress routes pass through to specialized handlers.
- * 4. 100% Edge-runtime compatible: Zero database or heavy crypto dependencies.
+ * 2. Strict webhook route classification: External ingress callbacks bypass perimeter, while webhook management endpoints are strictly protected.
+ * 3. Strict invitation route classification: Public metadata inspection passes, while invitation acceptance requires an authenticated session.
+ * 4. Explicit authentication allowlist: Only approved auth endpoints and HTTP methods pass through; unknown auth routes are fail-closed protected.
+ * 5. Authoritative header sanitization: Strips untrusted identity headers (x-user-id, x-user-role, x-workspace-id, x-membership-role).
+ * 6. 100% Edge-runtime compatible: Zero database or heavy crypto dependencies.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,6 +18,28 @@ const UNTRUSTED_IDENTITY_HEADERS = [
   'x-user-role',
   'x-workspace-id',
   'x-membership-role',
+];
+
+interface AllowedEndpoint {
+  path: string;
+  methods: string[];
+}
+
+/**
+ * Strict allowlist of approved public authentication and self-management endpoints.
+ * Explicitly binds each permitted path to its valid HTTP method(s).
+ */
+const APPROVED_AUTH_ENDPOINTS: AllowedEndpoint[] = [
+  { path: '/api/v1/auth/csrf', methods: ['GET'] },
+  { path: '/api/v1/auth/register', methods: ['POST'] },
+  { path: '/api/v1/auth/login', methods: ['POST'] },
+  { path: '/api/v1/auth/forgot-password', methods: ['POST'] },
+  { path: '/api/v1/auth/reset-password', methods: ['POST'] },
+  { path: '/api/v1/auth/verify-email', methods: ['POST'] },
+  { path: '/api/v1/auth/session', methods: ['GET'] },
+  { path: '/api/v1/auth/me', methods: ['GET'] },
+  { path: '/api/v1/auth/resend-verification', methods: ['POST'] },
+  { path: '/api/v1/auth/logout', methods: ['POST'] },
 ];
 
 /**
@@ -30,38 +54,87 @@ function isStaticAsset(pathname: string): boolean {
 }
 
 /**
- * Checks if a pathname represents a public authentication or self-management API endpoint.
+ * Validates that an authentication request matches an approved path and permitted HTTP method.
+ * Any unknown route under /api/v1/auth/* or unexpected HTTP method is fail-closed.
  */
-function isPublicAuthApi(pathname: string): boolean {
-  return (
-    pathname === '/api/v1/auth/csrf' ||
-    pathname === '/api/v1/auth/register' ||
-    pathname === '/api/v1/auth/login' ||
-    pathname === '/api/v1/auth/forgot-password' ||
-    pathname === '/api/v1/auth/reset-password' ||
-    pathname === '/api/v1/auth/verify-email' ||
-    pathname === '/api/v1/auth/session' ||
-    pathname === '/api/v1/auth/me' ||
-    pathname === '/api/v1/auth/resend-verification' ||
-    pathname === '/api/v1/auth/logout'
-  );
+function isApprovedAuthRoute(pathname: string, method: string): boolean {
+  const normMethod = method.toUpperCase();
+  const endpoint = APPROVED_AUTH_ENDPOINTS.find((e) => e.path === pathname);
+  if (!endpoint) {
+    return false;
+  }
+  return endpoint.methods.includes(normMethod);
 }
 
 /**
- * Checks if a pathname represents a public webhook or external ingress endpoint.
+ * Identifies external webhook ingress callbacks:
+ * - Matches: /api/v1/webhooks/<token> (single segment, GET or POST)
+ * - Excludes: /api/v1/webhooks (management list/create)
+ * - Excludes: /api/v1/webhooks/<token>/rotate-secret (management)
+ * - Excludes: /api/v1/webhooks/<token>/deliveries (management)
  */
-function isPublicIngressApi(pathname: string): boolean {
-  return (
-    pathname.startsWith('/api/v1/webhooks/') ||
-    pathname.startsWith('/api/v1/invitations/') ||
-    pathname === '/api/v1/health'
-  );
+function isExternalWebhookIngress(pathname: string, method: string): boolean {
+  const normMethod = method.toUpperCase();
+  if (normMethod !== 'POST' && normMethod !== 'GET') {
+    return false;
+  }
+
+  const webhookIngressRegex = /^\/api\/v1\/webhooks\/([^/]+)$/;
+  const match = pathname.match(webhookIngressRegex);
+  if (!match) {
+    return false;
+  }
+
+  const tokenOrSubpath = match[1];
+  // Sub-actions are management operations and must be protected
+  if (tokenOrSubpath === 'rotate-secret' || tokenOrSubpath === 'deliveries') {
+    return false;
+  }
+
+  return true;
 }
 
 /**
- * Checks if a pathname represents a public UI page.
+ * Identifies public invitation metadata inspection:
+ * - Matches: GET /api/v1/invitations/<token>
+ * - Excludes: POST /api/v1/invitations/accept (must be authenticated)
+ * - Excludes: /api/v1/invitations (management)
  */
-function isPublicUiPage(pathname: string): boolean {
+function isPublicInvitationInspection(pathname: string, method: string): boolean {
+  if (method.toUpperCase() !== 'GET') {
+    return false;
+  }
+
+  const inviteRegex = /^\/api\/v1\/invitations\/([^/]+)$/;
+  const match = pathname.match(inviteRegex);
+  if (!match) {
+    return false;
+  }
+
+  const tokenOrSubpath = match[1];
+  if (tokenOrSubpath === 'accept') {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks if a pathname represents a public healthcheck endpoint.
+ */
+function isPublicHealthCheck(pathname: string, method: string): boolean {
+  return pathname === '/api/v1/health' && method.toUpperCase() === 'GET';
+}
+
+/**
+ * Checks if a pathname represents a public UI landing/auth page.
+ */
+function isPublicUiPage(pathname: string, method: string): boolean {
+  const normMethod = method.toUpperCase();
+  if (normMethod !== 'GET' && normMethod !== 'HEAD') {
+    return false;
+  }
+
   return (
     pathname === '/' ||
     pathname === '/login' ||
@@ -69,7 +142,7 @@ function isPublicUiPage(pathname: string): boolean {
     pathname === '/forgot-password' ||
     pathname === '/reset-password' ||
     pathname === '/invite' ||
-    pathname.startsWith('/invite/')
+    /^\/invite\/[^/]+$/.test(pathname)
   );
 }
 
@@ -102,6 +175,7 @@ function hasSessionCookie(request: NextRequest): boolean {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const method = request.method;
   const cleanPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
 
   // 1. Static and Internal Next.js Assets pass through directly
@@ -113,12 +187,14 @@ export function middleware(request: NextRequest) {
   const sanitizedHeaders = sanitizeHeaders(request);
 
   // 3. Route Classification
-  const isAuthApi = isPublicAuthApi(cleanPath);
-  const isIngressApi = isPublicIngressApi(cleanPath);
-  const isPublicUi = isPublicUiPage(cleanPath);
+  const isApprovedAuth = isApprovedAuthRoute(cleanPath, method);
+  const isWebhookIngress = isExternalWebhookIngress(cleanPath, method);
+  const isInvitationInspection = isPublicInvitationInspection(cleanPath, method);
+  const isHealth = isPublicHealthCheck(cleanPath, method);
+  const isPublicUi = isPublicUiPage(cleanPath, method);
 
-  // Public routes pass through perimeter defense with headers sanitized
-  if (isAuthApi || isIngressApi || isPublicUi) {
+  // Public and approved self-management routes pass through perimeter defense with headers sanitized
+  if (isApprovedAuth || isWebhookIngress || isInvitationInspection || isHealth || isPublicUi) {
     return NextResponse.next({
       request: {
         headers: sanitizedHeaders,
@@ -173,4 +249,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
-

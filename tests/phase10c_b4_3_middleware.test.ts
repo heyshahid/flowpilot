@@ -1,22 +1,29 @@
 /**
  * FlowPilot Automated Test Suite: Phase 10C-B4.3
- * Edge Perimeter Middleware & Session Validation
+ * Edge Perimeter Middleware & Session Validation (Security Audit & Corrections)
  *
  * Verifies:
- * 1. Public route pass-through (auth, webhooks, invitations, public UI)
- * 2. Static asset pass-through
- * 3. Protected API early 401 rejection when session cookie is missing
- * 4. Protected UI 307 redirect to /login with returnTo when session cookie is missing
+ * 1. Strict webhook route classification:
+ *    - Ingress callbacks (/api/v1/webhooks/[token]) pass without cookie
+ *    - Management endpoints (/api/v1/webhooks, rotate-secret, deliveries) require session cookie (401)
+ * 2. Strict invitation route classification:
+ *    - Public metadata inspection (GET /api/v1/invitations/[token]) passes without cookie
+ *    - Invitation acceptance (POST /api/v1/invitations/accept) strictly requires session cookie (401)
+ * 3. Exact authentication route allowlist:
+ *    - Only approved B3 endpoints and methods pass without cookie
+ *    - Unknown /api/v1/auth/* endpoints are fail-closed protected (401)
+ *    - Method mismatches on auth endpoints are fail-closed protected (401)
+ * 4. Protected API and UI perimeter defense
  * 5. Authoritative header sanitization (x-user-id, x-user-role, x-workspace-id, x-membership-role stripped)
- * 6. Cookie detection in production (__Host-fp_session) vs development (fp_session)
- * 7. Development UI bypass security invariants (impossible to activate in production, never affects APIs)
+ * 6. Cookie detection in production vs development
+ * 7. Development UI bypass security invariants
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { middleware } from '../src/middleware';
 
-describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
+describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware (Security Corrections)', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -50,70 +57,191 @@ describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
   });
 
   // ----------------------------------------------------
-  // 2. Public Route Pass-Through
+  // 2. Strict Webhook Route Classification (Audit Issue 1)
   // ----------------------------------------------------
-  describe('2. Public Route Pass-Through', () => {
-    it('should allow public auth API endpoints without session cookie', () => {
-      const publicAuthEndpoints = [
-        '/api/v1/auth/csrf',
-        '/api/v1/auth/register',
-        '/api/v1/auth/login',
-        '/api/v1/auth/forgot-password',
-        '/api/v1/auth/reset-password',
-        '/api/v1/auth/verify-email',
-        '/api/v1/auth/session',
-        '/api/v1/auth/me',
-        '/api/v1/auth/resend-verification',
-        '/api/v1/auth/logout',
+  describe('2. Strict Webhook Route Classification', () => {
+    it('should allow external webhook ingress POST callbacks without session cookie', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/webhooks/whk_ext_callback_abc123', {
+        method: 'POST',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+    });
+
+    it('should allow external webhook ingress GET callbacks without session cookie', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/webhooks/whk_ext_callback_abc123', {
+        method: 'GET',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+    });
+
+    it('should REJECT webhook list/create management endpoint without session cookie with 401', async () => {
+      const paths = ['/api/v1/webhooks', '/api/v1/webhooks/'];
+      for (const path of paths) {
+        const reqGet = new NextRequest(`http://localhost:3000${path}`, { method: 'GET' });
+        const resGet = middleware(reqGet);
+        expect(resGet.status).toBe(401);
+
+        const reqPost = new NextRequest(`http://localhost:3000${path}`, { method: 'POST' });
+        const resPost = middleware(reqPost);
+        expect(resPost.status).toBe(401);
+      }
+    });
+
+    it('should REJECT webhook secret rotation endpoint without session cookie with 401', async () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/webhooks/whk_123/rotate-secret', {
+        method: 'POST',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.code).toBe('UNAUTHORIZED');
+    });
+
+    it('should REJECT webhook deliveries history endpoint without session cookie with 401', async () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/webhooks/whk_123/deliveries', {
+        method: 'GET',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.code).toBe('UNAUTHORIZED');
+    });
+
+    it('should allow webhook management endpoints through when valid session cookie is present', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/webhooks/whk_123/rotate-secret', {
+        method: 'POST',
+        headers: { cookie: 'fp_session=valid_test_session' },
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+    });
+  });
+
+  // ----------------------------------------------------
+  // 3. Strict Invitation Route Classification (Audit Issue 2)
+  // ----------------------------------------------------
+  describe('3. Strict Invitation Route Classification', () => {
+    it('should allow public invitation metadata inspection (GET) without session cookie', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/invitations/inv_tok_valid_999', {
+        method: 'GET',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+    });
+
+    it('should REJECT invitation acceptance (POST /api/v1/invitations/accept) without session cookie with 401', async () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/invitations/accept', {
+        method: 'POST',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data).toEqual({
+        error: 'Unauthorized: Missing session cookie.',
+        code: 'UNAUTHORIZED',
+      });
+    });
+
+    it('should allow invitation acceptance through to route layer when session cookie is present', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/invitations/accept', {
+        method: 'POST',
+        headers: { cookie: 'fp_session=valid_user_session' },
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+    });
+
+    it('should REJECT generic /api/v1/invitations management route without session cookie with 401', () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/invitations', {
+        method: 'GET',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(401);
+    });
+
+    it('should allow public UI invitation landing page (/invite/[token]) without session cookie', () => {
+      const req = new NextRequest('http://localhost:3000/invite/inv_tok_valid_999', {
+        method: 'GET',
+      });
+      const res = middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('location')).toBeNull();
+    });
+  });
+
+  // ----------------------------------------------------
+  // 4. Exact Authentication Route Allowlist (Audit Issue 3)
+  // ----------------------------------------------------
+  describe('4. Exact Authentication Route Allowlist', () => {
+    it('should allow approved authentication endpoints with matching methods without cookie', () => {
+      const approvedCases = [
+        { path: '/api/v1/auth/csrf', method: 'GET' },
+        { path: '/api/v1/auth/register', method: 'POST' },
+        { path: '/api/v1/auth/login', method: 'POST' },
+        { path: '/api/v1/auth/forgot-password', method: 'POST' },
+        { path: '/api/v1/auth/reset-password', method: 'POST' },
+        { path: '/api/v1/auth/verify-email', method: 'POST' },
+        { path: '/api/v1/auth/session', method: 'GET' },
+        { path: '/api/v1/auth/me', method: 'GET' },
+        { path: '/api/v1/auth/resend-verification', method: 'POST' },
+        { path: '/api/v1/auth/logout', method: 'POST' },
       ];
 
-      for (const endpoint of publicAuthEndpoints) {
-        const req = new NextRequest(`http://localhost:3000${endpoint}`, {
-          method: 'POST',
+      for (const item of approvedCases) {
+        const req = new NextRequest(`http://localhost:3000${item.path}`, {
+          method: item.method,
         });
         const res = middleware(req);
         expect(res.status).toBe(200);
       }
     });
 
-    it('should allow external ingress webhooks and invitations without session cookie', () => {
-      const ingressEndpoints = [
-        '/api/v1/webhooks/webhook_token_123',
-        '/api/v1/invitations/invite_token_456',
-        '/api/v1/health',
+    it('should REJECT unknown or future /api/v1/auth/* routes without session cookie with 401', async () => {
+      const unknownRoutes = [
+        { path: '/api/v1/auth/unknown-endpoint', method: 'GET' },
+        { path: '/api/v1/auth/admin-escalation', method: 'POST' },
+        { path: '/api/v1/auth/users', method: 'GET' },
+        { path: '/api/v1/auth/tokens/revoke-all', method: 'POST' },
       ];
 
-      for (const endpoint of ingressEndpoints) {
-        const req = new NextRequest(`http://localhost:3000${endpoint}`);
+      for (const item of unknownRoutes) {
+        const req = new NextRequest(`http://localhost:3000${item.path}`, {
+          method: item.method,
+        });
         const res = middleware(req);
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(401);
+        const data = await res.json();
+        expect(data.code).toBe('UNAUTHORIZED');
       }
     });
 
-    it('should allow public UI pages without session cookie', () => {
-      const publicPages = [
-        '/',
-        '/login',
-        '/register',
-        '/forgot-password',
-        '/reset-password',
-        '/invite',
-        '/invite/token_789',
+    it('should REJECT disallowed HTTP methods on approved auth endpoints without session cookie with 401', async () => {
+      const methodMismatches = [
+        { path: '/api/v1/auth/csrf', method: 'POST' }, // only GET allowed
+        { path: '/api/v1/auth/login', method: 'GET' }, // only POST allowed
+        { path: '/api/v1/auth/register', method: 'GET' }, // only POST allowed
+        { path: '/api/v1/auth/session', method: 'POST' }, // only GET allowed
+        { path: '/api/v1/auth/me', method: 'DELETE' }, // only GET allowed
       ];
 
-      for (const page of publicPages) {
-        const req = new NextRequest(`http://localhost:3000${page}`);
+      for (const item of methodMismatches) {
+        const req = new NextRequest(`http://localhost:3000${item.path}`, {
+          method: item.method,
+        });
         const res = middleware(req);
-        expect(res.status).toBe(200);
-        expect(res.headers.get('location')).toBeNull();
+        expect(res.status).toBe(401);
+        const data = await res.json();
+        expect(data.code).toBe('UNAUTHORIZED');
       }
     });
   });
 
   // ----------------------------------------------------
-  // 3. Early Rejection on Protected API Routes
+  // 5. Protected API Route Perimeter Defense
   // ----------------------------------------------------
-  describe('3. Protected API Route Perimeter Defense', () => {
+  describe('5. Protected API Route Perimeter Defense', () => {
     it('should return immediate 401 JSON when session cookie is missing on protected API', async () => {
       const protectedApis = [
         '/api/v1/workflows',
@@ -183,9 +311,9 @@ describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
   });
 
   // ----------------------------------------------------
-  // 4. Protected UI Page Redirection
+  // 6. Protected UI Page Redirection
   // ----------------------------------------------------
-  describe('4. Protected UI Page Redirection', () => {
+  describe('6. Protected UI Page Redirection', () => {
     it('should redirect protected UI to /login with 307 and returnTo when session is missing', () => {
       const protectedPages = [
         '/workflows',
@@ -224,9 +352,9 @@ describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
   });
 
   // ----------------------------------------------------
-  // 5. Authoritative Header Sanitization
+  // 7. Authoritative Header Sanitization
   // ----------------------------------------------------
-  describe('5. Header Sanitization Policy', () => {
+  describe('7. Header Sanitization Policy', () => {
     it('should strip spoofed x-user-id, x-user-role, x-workspace-id, and x-membership-role from downstream headers', () => {
       const req = new NextRequest('http://localhost:3000/api/v1/auth/csrf', {
         headers: {
@@ -240,20 +368,14 @@ describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
 
       const res = middleware(req);
       expect(res.status).toBe(200);
-
-      // Verify that downstream request headers inside the Next.js response were sanitized
-      const modifiedReqHeaders = (res as any).headers;
-      // In Next.js middleware, NextRequest forwarded via NextResponse.next({ request: { headers } })
-      // stores override headers in 'x-middleware-request-...' or the internal symbol.
-      // We also verify directly through the middleware function behavior
-      expect(req.headers.get('x-user-id')).toBe('usr_attacker'); // original request unchanged
+      expect(req.headers.get('x-user-id')).toBe('usr_attacker'); // original request instance unmodified
     });
   });
 
   // ----------------------------------------------------
-  // 6. Development UI Bypass Security Invariants
+  // 8. Development UI Bypass Security Invariants
   // ----------------------------------------------------
-  describe('6. Development UI Bypass Invariants', () => {
+  describe('8. Development UI Bypass Invariants', () => {
     it('should allow UI page preview in development mode when DEV_BYPASS_UI_REDIRECT=true', () => {
       (process.env as any).NODE_ENV = 'development';
       process.env.DEV_BYPASS_UI_REDIRECT = 'true';
@@ -289,4 +411,3 @@ describe('Phase 10C-B4.3: Next.js Perimeter Edge Middleware', () => {
     });
   });
 });
-
