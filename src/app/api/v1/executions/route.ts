@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { executionStore } from '@/lib/storage/executionStore';
 import { WorkflowExecutionStatus } from '@/core/execution/types';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
     const { searchParams } = new URL(req.url);
     const workflowId = searchParams.get('workflowId') || undefined;
     const statusParam = searchParams.get('status') as WorkflowExecutionStatus | null;
@@ -30,9 +31,15 @@ export async function GET(req: NextRequest) {
       limit,
       offset,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: (error as Error).message },
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
       { status: 500 }
     );
   }

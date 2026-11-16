@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { workflowStore } from '@/lib/storage/workflowStore';
 import { executionQueue } from '@/core/execution/queue';
 
@@ -11,10 +13,17 @@ export async function POST(
     const workflow = workflowStore.getById(id);
     if (!workflow) {
       return NextResponse.json(
-        { success: false, error: `Workflow "${id}" was not found.` },
+        { success: false, error: `Workflow "${id}" was not found.`, code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
+
+    // Authoritative tenant isolation & execution permission enforcement
+    const authCtx = await AuthContextManager.enforceWorkspaceIsolation(
+      req,
+      workflow.workspaceId || 'ws_default',
+      'workflow:execute'
+    );
 
     let payload: Record<string, unknown> = {};
     let waitForCompletion = false;
@@ -40,8 +49,11 @@ export async function POST(
       waitForCompletion = true;
     }
 
-    // Enqueue background execution job
+    // Enqueue background execution job with tenant attribution
     const execution = await executionQueue.enqueue(id, payload);
+    if (execution && !execution.workspaceId) {
+      execution.workspaceId = authCtx.workspace.id;
+    }
 
     if (waitForCompletion) {
       const completedRecord = await executionQueue.waitForExecution(execution.id, 15000);
@@ -63,9 +75,15 @@ export async function POST(
       },
       { status: 202 }
     );
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: (error as Error).message },
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
       { status: 500 }
     );
   }

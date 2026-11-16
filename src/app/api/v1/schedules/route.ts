@@ -4,10 +4,11 @@ import { workflowStore } from '@/lib/storage/workflowStore';
 import { CronParser } from '@/core/scheduler/cronParser';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
+    const authCtx = await AuthContextManager.enforcePermission(req, 'schedule:read');
     const { searchParams } = new URL(req.url);
     const workflowId = searchParams.get('workflowId') || undefined;
     const status = (searchParams.get('status') as any) || undefined;
@@ -18,9 +19,15 @@ export async function GET(req: NextRequest) {
       workspaceId: authCtx.workspace.id,
     });
     return NextResponse.json({ success: true, count: list.length, schedules: list });
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: (error as Error).message },
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
       { status: 500 }
     );
   }
@@ -45,7 +52,7 @@ export async function POST(req: NextRequest) {
 
     if (!workflowId || !name || !type) {
       return NextResponse.json(
-        { success: false, error: 'Missing required parameters: "workflowId", "name", and "type" are required.' },
+        { success: false, error: 'Missing required parameters: "workflowId", "name", and "type" are required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -53,7 +60,7 @@ export async function POST(req: NextRequest) {
     const workflow = workflowStore.getById(workflowId, authCtx.workspace.id);
     if (!workflow) {
       return NextResponse.json(
-        { success: false, error: `Workflow with ID "${workflowId}" does not exist in this workspace.` },
+        { success: false, error: `Workflow with ID "${workflowId}" does not exist in this workspace.`, code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest) {
     if (type === 'cron') {
       if (!cronExpression || !CronParser.isValid(cronExpression)) {
         return NextResponse.json(
-          { success: false, error: `Invalid cron expression "${cronExpression}".` },
+          { success: false, error: `Invalid cron expression "${cronExpression}".`, code: 'INVALID_CRON' },
           { status: 400 }
         );
       }
@@ -96,9 +103,16 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, schedule }, { status: 201 });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }

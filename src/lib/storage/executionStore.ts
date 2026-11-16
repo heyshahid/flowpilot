@@ -203,15 +203,21 @@ export class ExecutionStore {
     return record;
   }
 
-  public async getById(id: string): Promise<WorkflowExecutionRecord | null> {
-    return this.inMemoryExecutions.get(id) || null;
+  public async getById(id: string, workspaceId?: string): Promise<WorkflowExecutionRecord | null> {
+    const item = this.inMemoryExecutions.get(id) || null;
+    if (!item) return null;
+    if (workspaceId && (item.workspaceId || 'ws_default') !== workspaceId) {
+      return null;
+    }
+    return item;
   }
 
   public async update(
     id: string,
-    updates: Partial<WorkflowExecutionRecord>
+    updates: Partial<WorkflowExecutionRecord>,
+    workspaceId?: string
   ): Promise<WorkflowExecutionRecord> {
-    const existing = this.inMemoryExecutions.get(id);
+    const existing = await this.getById(id, workspaceId);
     if (!existing) {
       throw new Error(`Execution record "${id}" not found.`);
     }
@@ -266,7 +272,13 @@ export class ExecutionStore {
     return { items, total };
   }
 
-  public async delete(id: string): Promise<boolean> {
+  public async delete(id: string, workspaceId?: string): Promise<boolean> {
+    if (workspaceId) {
+      const existing = await this.getById(id, workspaceId);
+      if (!existing) {
+        return false;
+      }
+    }
     const deleted = this.inMemoryExecutions.delete(id);
     if (deleted) {
       this.persist();

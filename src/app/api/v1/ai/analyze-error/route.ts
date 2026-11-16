@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { ErrorAssistant } from '@/core/ai/errorAssistant';
 
 export async function POST(req: NextRequest) {
   try {
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
+
     const body = await req.json();
-    const { executionId, failedNodeId, provider, model, workspaceId } = body;
+    const { executionId, failedNodeId, provider, model } = body;
 
     if (!executionId) {
       return NextResponse.json(
-        { success: false, error: 'An "executionId" is required for error diagnosis.' },
+        { success: false, error: 'An "executionId" is required for error diagnosis.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -16,7 +20,7 @@ export async function POST(req: NextRequest) {
     const diagnosis = await ErrorAssistant.diagnose(executionId, failedNodeId, {
       provider,
       model,
-      workspaceId,
+      workspaceId: authCtx.workspace.id,
     });
 
     return NextResponse.json({
@@ -24,7 +28,15 @@ export async function POST(req: NextRequest) {
       data: diagnosis,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
-

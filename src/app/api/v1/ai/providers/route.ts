@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { aiProviderRegistry } from '@/core/ai/aiProviderRegistry';
 import { AIProviderId } from '@/core/ai/types';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    await AuthContextManager.enforcePermission(req, 'integration:read');
+
     const providers = aiProviderRegistry.listProviders();
     const activeProvider = aiProviderRegistry.getActiveProvider();
     const activeModel = aiProviderRegistry.getActiveModel();
@@ -17,18 +21,29 @@ export async function GET() {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
 export async function PATCH(req: NextRequest) {
   try {
+    await AuthContextManager.enforcePermission(req, 'integration:manage');
+
     const body = await req.json();
     const { providerId, model } = body;
 
     if (!providerId) {
       return NextResponse.json(
-        { success: false, error: 'providerId is required.' },
+        { success: false, error: 'providerId is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -44,7 +59,15 @@ export async function PATCH(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Invalid request.', code: 'BAD_REQUEST' },
+      { status: 400 }
+    );
   }
 }
-

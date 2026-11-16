@@ -185,9 +185,14 @@ export class WebhookStore {
     return this.configs.get(id) || null;
   }
 
-  public async getByToken(token: string): Promise<WebhookConfig | null> {
+  public async getByToken(token: string, workspaceId?: string): Promise<WebhookConfig | null> {
     for (const c of this.configs.values()) {
-      if (c.token === token) return c;
+      if (c.token === token) {
+        if (workspaceId && (c.workspaceId || 'ws_default') !== workspaceId) {
+          return null;
+        }
+        return c;
+      }
     }
     return null;
   }
@@ -209,9 +214,12 @@ export class WebhookStore {
     );
   }
 
-  public async rotateSecret(id: string): Promise<WebhookConfig> {
+  public async rotateSecret(id: string, workspaceId?: string): Promise<WebhookConfig> {
     const config = this.configs.get(id);
     if (!config) throw new Error(`Webhook "${id}" not found.`);
+    if (workspaceId && (config.workspaceId || 'ws_default') !== workspaceId) {
+      throw new Error(`Webhook "${id}" not found.`);
+    }
 
     config.secret = WebhookSecurityManager.generateWebhookSecret();
     config.updatedAt = new Date().toISOString();
@@ -262,9 +270,15 @@ export class WebhookStore {
     return record;
   }
 
-  public async getDeliveries(webhookId?: string, limit = 50): Promise<WebhookDeliveryRecord[]> {
+  public async getDeliveries(webhookId?: string, limit = 50, workspaceId?: string): Promise<WebhookDeliveryRecord[]> {
     let list = this.deliveries;
     if (webhookId) {
+      if (workspaceId) {
+        const config = this.configs.get(webhookId);
+        if (!config || (config.workspaceId || 'ws_default') !== workspaceId) {
+          return [];
+        }
+      }
       list = list.filter((d) => d.webhookId === webhookId);
     }
     return list.slice(0, limit);

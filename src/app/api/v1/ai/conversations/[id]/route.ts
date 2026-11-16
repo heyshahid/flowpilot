@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { aiConversationStore } from '@/lib/storage/aiConversationStore';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
     const { id } = await params;
     const conv = aiConversationStore.getById(id);
 
-    if (!conv) {
+    if (!conv || (conv.workspaceId && conv.workspaceId !== authCtx.workspace.id)) {
       return NextResponse.json(
-        { success: false, error: `Conversation "${id}" not found.` },
+        { success: false, error: `Conversation "${id}" not found.`, code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -21,7 +24,16 @@ export async function GET(
       data: conv,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
@@ -30,13 +42,23 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:create');
     const { id } = await params;
+    const conv = aiConversationStore.getById(id);
+
+    if (!conv || (conv.workspaceId && conv.workspaceId !== authCtx.workspace.id)) {
+      return NextResponse.json(
+        { success: false, error: `Conversation "${id}" not found.`, code: 'NOT_FOUND' },
+        { status: 404 }
+      );
+    }
+
     const body = await req.json();
     const { role, content, metadata } = body;
 
     if (!role || !content) {
       return NextResponse.json(
-        { success: false, error: '"role" and "content" are required.' },
+        { success: false, error: '"role" and "content" are required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -48,21 +70,39 @@ export async function POST(
       data: msg,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:delete');
     const { id } = await params;
-    const deleted = aiConversationStore.delete(id);
+    const conv = aiConversationStore.getById(id);
 
+    if (!conv || (conv.workspaceId && conv.workspaceId !== authCtx.workspace.id)) {
+      return NextResponse.json(
+        { success: false, error: `Conversation "${id}" not found.`, code: 'NOT_FOUND' },
+        { status: 404 }
+      );
+    }
+
+    const deleted = aiConversationStore.delete(id);
     if (!deleted) {
       return NextResponse.json(
-        { success: false, error: `Conversation "${id}" not found.` },
+        { success: false, error: `Conversation "${id}" not found.`, code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -72,7 +112,15 @@ export async function DELETE(
       message: `Conversation "${id}" deleted successfully.`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
-

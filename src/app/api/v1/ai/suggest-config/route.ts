@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { SmartConfigSuggester } from '@/core/ai/smartConfigSuggester';
 
 export async function POST(req: NextRequest) {
   try {
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
+
     const body = await req.json();
-    const { nodeType, userIntent, existingConfig, provider, model, workspaceId } = body;
+    const { nodeType, userIntent, existingConfig, provider, model } = body;
 
     if (!nodeType || !userIntent) {
       return NextResponse.json(
-        { success: false, error: '"nodeType" and "userIntent" are required.' },
+        { success: false, error: '"nodeType" and "userIntent" are required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -17,7 +21,7 @@ export async function POST(req: NextRequest) {
       nodeType,
       userIntent,
       existingConfig || {},
-      { provider, model, workspaceId }
+      { provider, model, workspaceId: authCtx.workspace.id }
     );
 
     return NextResponse.json({
@@ -25,7 +29,15 @@ export async function POST(req: NextRequest) {
       data: result,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
-

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { aiProviderRegistry } from '@/core/ai/aiProviderRegistry';
 import { AIProviderId } from '@/core/ai/types';
 
@@ -7,6 +9,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await AuthContextManager.enforcePermission(req, 'integration:manage');
+
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const result = await aiProviderRegistry.testProvider(id as AIProviderId, body.apiKey);
@@ -16,7 +20,15 @@ export async function POST(
       data: result,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: err.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
-

@@ -133,8 +133,13 @@ export class ScheduleStore {
     return record;
   }
 
-  public async getById(id: string): Promise<ScheduleConfig | null> {
-    return this.inMemorySchedules.get(id) || null;
+  public async getById(id: string, workspaceId?: string): Promise<ScheduleConfig | null> {
+    const item = this.inMemorySchedules.get(id) || null;
+    if (!item) return null;
+    if (workspaceId && (item.workspaceId || 'ws_default') !== workspaceId) {
+      return null;
+    }
+    return item;
   }
 
   public async list(filter?: { workflowId?: string; status?: ScheduleStatus; workspaceId?: string }): Promise<ScheduleConfig[]> {
@@ -151,8 +156,12 @@ export class ScheduleStore {
     return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
-  public async update(id: string, updates: Partial<ScheduleConfig>): Promise<ScheduleConfig | null> {
-    const existing = this.inMemorySchedules.get(id);
+  public async update(
+    id: string,
+    updates: Partial<ScheduleConfig>,
+    workspaceId?: string
+  ): Promise<ScheduleConfig | null> {
+    const existing = await this.getById(id, workspaceId);
     if (!existing) return null;
 
     const updated: ScheduleConfig = {
@@ -171,7 +180,11 @@ export class ScheduleStore {
     return updated;
   }
 
-  public async delete(id: string): Promise<boolean> {
+  public async delete(id: string, workspaceId?: string): Promise<boolean> {
+    if (workspaceId) {
+      const existing = await this.getById(id, workspaceId);
+      if (!existing) return false;
+    }
     const deleted = this.inMemorySchedules.delete(id);
     if (deleted) this.persist();
     return deleted;

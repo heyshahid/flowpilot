@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { invitationStore } from '@/lib/storage/invitationStore';
-import { userStore } from '@/lib/storage/userStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
+import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError, ForbiddenError } from '@/core/auth/types';
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Authoritative session authentication and pending-verification enforcement
+    const authCtx = await AuthContextManager.resolve(req);
+    const targetUser = authCtx.user;
+
     const body = await req.json();
-    const { token, userId, email, name } = body;
+    const { token } = body;
 
     if (!token || typeof token !== 'string') {
       return NextResponse.json(
-        { success: false, error: 'Invitation token is required.' },
+        { success: false, error: 'Invitation token is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -18,22 +23,20 @@ export async function POST(req: NextRequest) {
     const invitation = invitationStore.getByToken(token);
     if (!invitation) {
       return NextResponse.json(
-        { success: false, error: 'Invalid or non-existent invitation token.' },
+        { success: false, error: 'Invalid or non-existent invitation token.', code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
 
-    // Determine target user
-    let targetUser = userId ? userStore.getById(userId) : null;
-    if (!targetUser && email) {
-      targetUser = userStore.getByEmail(email);
-    }
-    if (!targetUser) {
-      // Auto-create user profile if new signup accepts invite
-      targetUser = userStore.create({
-        name: name || invitation.email.split('@')[0],
-        email: invitation.email,
-      });
+    // Verify invitation email recipient matches authenticated user
+    if (
+      invitation.email &&
+      targetUser.email &&
+      invitation.email.toLowerCase() !== targetUser.email.toLowerCase()
+    ) {
+      throw new ForbiddenError(
+        `This invitation was addressed to "${invitation.email}", but you are signed in as "${targetUser.email}".`
+      );
     }
 
     const result = invitationStore.acceptInvitation(token, targetUser.id);
@@ -53,13 +56,21 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Successfully joined workspace!`,
+      message: 'Successfully joined workspace!',
       workspaceId: result.workspaceId,
       role: result.role,
       user: targetUser,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    return NextResponse.json({ success: false, error: msg }, { status: 400 });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to accept invitation.', code: 'BAD_REQUEST' },
+      { status: 400 }
+    );
   }
 }
