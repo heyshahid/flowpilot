@@ -128,14 +128,12 @@ export class MembershipRepository {
   }
 
   /**
-   * Resolves the primary active workspace for a user using the approved deterministic selection rule:
-   * 1. Primary Preference: Earliest active owned workspace (where user is owner, workspace not archived,
-   *    and user has an active OWNER membership). Ordered by workspace.createdAt ASC, workspace.id ASC.
-   * 2. Fallback: If no owned workspace has an active OWNER membership, find the earliest workspace
-   *    where the user has ANY active membership (status = 'active', workspace.isArchived = false).
-   *    Ordered by membership.createdAt ASC, membership.workspaceId ASC.
-   * 3. Excludes archived workspaces and non-active memberships.
-   * 4. Returns null if user has no eligible active memberships.
+   * Resolves the primary active owned workspace for a user using the approved B4.1 rule:
+   * 1. Only considers eligible active owned workspaces (where user is owner, workspace not archived,
+   *    and user has an active OWNER membership).
+   * 2. Ordered deterministically by workspace.createdAt ASC, workspace.id ASC.
+   * 3. Excludes archived workspaces (isArchived: false) and non-active/non-owner memberships.
+   * 4. Returns null if user has no eligible active owned workspace.
    */
   public async getActiveWorkspaceForUser(userId: string): Promise<Workspace | null> {
     if (!this.isValidId(userId)) {
@@ -145,7 +143,6 @@ export class MembershipRepository {
     const cleanUserId = userId.trim();
 
     try {
-      // 1. Primary Preference: Earliest active owned workspace with active OWNER membership
       const ownedMemberships = await (this.client as any).membership.findMany({
         where: {
           userId: cleanUserId,
@@ -168,29 +165,6 @@ export class MembershipRepository {
 
       if (ownedMemberships.length > 0 && ownedMemberships[0].workspace) {
         return ownedMemberships[0].workspace;
-      }
-
-      // 2. Fallback: Earliest workspace where user has ANY active membership
-      const anyActiveMemberships = await (this.client as any).membership.findMany({
-        where: {
-          userId: cleanUserId,
-          status: 'active',
-          workspace: {
-            isArchived: false,
-          },
-        },
-        include: {
-          workspace: true,
-        },
-        orderBy: [
-          { createdAt: 'asc' },
-          { workspaceId: 'asc' },
-        ],
-        take: 1,
-      });
-
-      if (anyActiveMemberships.length > 0 && anyActiveMemberships[0].workspace) {
-        return anyActiveMemberships[0].workspace;
       }
 
       return null;
@@ -251,3 +225,4 @@ export class MembershipRepository {
 }
 
 export const membershipRepository = new MembershipRepository();
+

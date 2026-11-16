@@ -395,7 +395,7 @@ describe('Phase 10C-B4.1: PostgreSQL Membership & Workspace Data Layer', () => {
       expect(activeWs?.id).toBe('ws_primary_owned');
     });
 
-    it('should fallback to earliest active membership if user owns no workspaces', async () => {
+    it('should return null if user owns no eligible active workspaces (no fallback to non-owned in B4.1)', async () => {
       await db.query(`INSERT INTO "User" ("id", "email", "name") VALUES ('usr_boss', 'boss@flowpilot.dev', 'Boss');`);
       await db.query(`INSERT INTO "User" ("id", "email", "name") VALUES ('usr_worker', 'worker@flowpilot.dev', 'Worker');`);
 
@@ -410,9 +410,9 @@ describe('Phase 10C-B4.1: PostgreSQL Membership & Workspace Data Layer', () => {
       await db.query(`INSERT INTO "Membership" ("id", "workspaceId", "userId", "role", "status", "createdAt")
                       VALUES ('m_w2', 'ws_boss_2', 'usr_worker', 'VIEWER', 'active', '2026-01-02T00:00:00Z');`);
 
+      // Approved B4.1 rule strictly considers active owned workspaces. A non-owner receives null.
       const workerWs = await membershipRepo.getActiveWorkspaceForUser('usr_worker');
-      expect(workerWs).not.toBeNull();
-      expect(workerWs?.id).toBe('ws_boss_1');
+      expect(workerWs).toBeNull();
     });
 
     it('should return null if user has only suspended or revoked memberships', async () => {
@@ -598,5 +598,93 @@ describe('Phase 10C-B4.1: PostgreSQL Membership & Workspace Data Layer', () => {
       const memCount = await db.query(`SELECT count(*) as c FROM "Membership";`);
       expect(Number((memCount.rows[0] as any).c)).toBe(0);
     });
+
+    it('should safely handle concurrent duplicate membership insertion inside transaction', async () => {
+      await db.query(`INSERT INTO "User" ("id", "email", "name", "status") VALUES ('usr_race', 'race@flowpilot.dev', 'Race', 'ACTIVE');`);
+      await db.query(`INSERT INTO "Workspace" ("id", "name", "slug", "ownerId", "isArchived") VALUES ('ws_race', 'Race WS', 'race-ws', 'usr_race', false);`);
+
+      // Mock client that simulates a concurrent insertion happening right before tx.membership.create
+      const racePrismaMock = {
+        ...prismaMock,
+        $transaction: async (cb: any) => {
+          // Concurrently insert membership before the transaction code executes creation
+          await db.query(
+            `INSERT INTO "Membership" ("id", "workspaceId", "userId", "role", "status")
+             VALUES ('mem_concurrent', 'ws_race', 'usr_race', 'OWNER', 'active');`
+          );
+
+          // Now execute the callback; the inner findUnique will detect the concurrent membership
+          return await cb(prismaMock);
+        },
+      };
+
+      const report = await runMembershipBackfill({ dryRun: false, confirm: true }, racePrismaMock);
+
+      // Backfill should have safely skipped creating a duplicate
+      expect(report.appliedCount).toBe(0);
+      const membersInDb = await db.query(`SELECT * FROM "Membership" WHERE "workspaceId" = 'ws_race';`);
+      expect(membersInDb.rows.length).toBe(1);
+      expect((membersInDb.rows[0] as any).id).toBe('mem_concurrent');
+    });
+
+    it('should roll back transaction and leave zero partial records if mid-execution failure occurs', async () => {
+      await db.query(`INSERT INTO "User" ("id", "email", "name", "status") VALUES ('usr_fail', 'fail@flowpilot.dev', 'Fail', 'ACTIVE');`);
+      await db.query(`INSERT INTO "Workspace" ("id", "name", "slug", "ownerId", "isArchived") VALUES ('ws_fail', 'Fail WS', 'fail-ws', 'usr_fail', false);`);
+
+      // Mock client whose $transaction fails during execution
+      let txErrorThrown = false;
+      const failingPrismaMock = {
+        ...prismaMock,
+        $transaction: async (cb: any) => {
+          await db.exec('BEGIN;');
+          try {
+            await cb({
+              ...prismaMock,
+              membership: {
+                ...prismaMock.membership,
+                create: async () => {
+                  throw new Error('SIMULATED_DATABASE_IO_FAILURE');
+                },
+              },
+            });
+            await db.exec('COMMIT;');
+          } catch (err) {
+            await db.exec('ROLLBACK;');
+            throw err;
+          }
+        },
+      };
+
+      try {
+        await runMembershipBackfill({ dryRun: false, confirm: true }, failingPrismaMock);
+      } catch (err: any) {
+        txErrorThrown = true;
+        expect(err.message).toContain('SIMULATED_DATABASE_IO_FAILURE');
+      }
+
+      expect(txErrorThrown).toBe(true);
+
+      // Verify complete rollback: zero records in Membership table
+      const memCount = await db.query(`SELECT count(*) as c FROM "Membership" WHERE "workspaceId" = 'ws_fail';`);
+      expect(Number((memCount.rows[0] as any).c)).toBe(0);
+    });
+
+    it('should handle concurrent eligibility change (workspace archived right before scan)', async () => {
+      await db.query(`INSERT INTO "User" ("id", "email", "name", "status") VALUES ('usr_elig', 'elig@flowpilot.dev', 'Elig', 'ACTIVE');`);
+      await db.query(`INSERT INTO "Workspace" ("id", "name", "slug", "ownerId", "isArchived") VALUES ('ws_elig', 'Elig WS', 'elig-ws', 'usr_elig', false);`);
+
+      // Concurrently archive the workspace before backfill inspects it
+      await db.query(`UPDATE "Workspace" SET "isArchived" = true WHERE "id" = 'ws_elig';`);
+
+      const report = await runMembershipBackfill({ dryRun: true }, prismaMock);
+      expect(report.eligibleProposed).toBe(0);
+      expect(report.skippedCount).toBe(1);
+      expect(report.skipBreakdown.workspaceArchived).toBe(1);
+
+      // Confirm no records created
+      const memCount = await db.query(`SELECT count(*) as c FROM "Membership";`);
+      expect(Number((memCount.rows[0] as any).c)).toBe(0);
+    });
   });
 });
+
