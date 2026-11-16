@@ -15,6 +15,7 @@ import {
 import { textGenerationDriver } from '../src/core/runtime/drivers/textGeneration';
 import { aiUsageStore } from '../src/lib/storage/aiUsageStore';
 import { aiConversationStore } from '../src/lib/storage/aiConversationStore';
+import { credentialStore } from '../src/lib/storage/credentialStore';
 import { getNodeDefinition } from '../src/core/registry/nodeRegistry';
 
 describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
@@ -59,6 +60,22 @@ describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
       aiProviderRegistry.setActiveProvider('mock', 'custom-mock-v2');
       expect(aiProviderRegistry.getActiveModel()).toBe('custom-mock-v2');
       aiProviderRegistry.setActiveProvider('mock');
+    });
+
+    it('should resolve platform AI provider keys via system mechanism without touching tenant credentials', async () => {
+      // Save a tenant credential with openai integrationId
+      await credentialStore.save({
+        name: 'Tenant OpenAI Key',
+        integrationId: 'openai',
+        type: 'api_key',
+        workspaceId: 'ws_tenant_x',
+        data: { apiKey: 'sk-tenant-secret-key-12345' },
+      });
+
+      // Confirm aiProviderRegistry does not leak or read tenant credentials
+      const resolvedKey = aiProviderRegistry.getApiKeyForProvider('openai');
+      // Must never return the tenant key
+      expect(resolvedKey).not.toBe('sk-tenant-secret-key-12345');
     });
   });
 

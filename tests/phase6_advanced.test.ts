@@ -114,6 +114,7 @@ describe('Phase 6: Advanced Automation & Scheduling', () => {
       const sched = await scheduleStore.save({
         workflowId: 'wf_crm_sync',
         workflowName: 'Home-grown CRM System',
+        workspaceId: 'ws_default',
         name: 'Engine Trigger Test',
         type: 'cron',
         cronExpression: '0 * * * *',

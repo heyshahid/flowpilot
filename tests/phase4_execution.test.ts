@@ -12,6 +12,8 @@ import { executionQueue } from '../src/core/execution/queue';
 import { executionWorker } from '../src/core/execution/worker';
 import { executionStore } from '../src/lib/storage/executionStore';
 import { workflowStore } from '../src/lib/storage/workflowStore';
+import { schedulerEngine } from '../src/core/scheduler/schedulerEngine';
+import { subWorkflowDriver } from '../src/core/runtime/drivers/subWorkflow';
 import { WorkflowGraph } from '../src/core/types/workflow';
 
 describe('Phase 4: Backend Workflow Execution Engine', () => {
@@ -405,6 +407,38 @@ describe('Phase 4: Backend Workflow Execution Engine', () => {
           signal: new AbortController().signal,
         })
       ).rejects.toThrow('missing a valid workspace identity');
+    });
+
+    it('should fail closed in scheduler engine if schedule lacks workspaceId', async () => {
+      const invalidSchedule: any = {
+        id: 'sched_no_ws',
+        workflowId: 'wf_sample',
+        name: 'Invalid Schedule',
+        type: 'cron',
+        cronExpression: '*/5 * * * *',
+        status: 'active',
+        workspaceId: '',
+      };
+
+      await expect(
+        schedulerEngine.triggerSchedule(invalidSchedule)
+      ).rejects.toThrow('lacks valid workspace identity');
+    });
+
+    it('should fail closed in sub-workflow driver if parent context lacks workspaceId', async () => {
+      const invalidContext: any = {
+        executionId: 'exec_parent_no_ws',
+        workflowId: 'wf_parent',
+        node: { id: 'node_sub', type: 'action.subWorkflow', config: { workflowId: 'wf_child' } },
+        trigger: { type: 'trigger.manual', payload: {}, timestamp: new Date().toISOString() },
+        steps: {},
+        signal: new AbortController().signal,
+        workspaceId: '', // Empty
+      };
+
+      await expect(
+        subWorkflowDriver(invalidContext, { subWorkflowId: 'wf_child' })
+      ).rejects.toThrow('Parent execution context lacks valid workspace identity');
     });
   });
 });

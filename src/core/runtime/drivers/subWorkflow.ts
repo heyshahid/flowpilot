@@ -22,17 +22,23 @@ export const subWorkflowDriver: NodeDriver = async (context, resolvedConfig) => 
     );
   }
 
-  // 2. Verify existence of target sub-workflow
-  const targetWorkflow = workflowStore.getById(subWorkflowId);
-  if (!targetWorkflow) {
-    throw new Error(`Target sub-workflow "${subWorkflowId}" does not exist in workspace.`);
-  }
-
-  // 3. Enforce maximum nesting depth
+  // 2. Enforce maximum nesting depth
   if (callStack.length >= MAX_SUBWORKFLOW_DEPTH) {
     throw new Error(
       `Maximum sub-workflow nesting depth limit of ${MAX_SUBWORKFLOW_DEPTH} exceeded.`
     );
+  }
+
+  // 3. Validate parent execution workspace identity (fail-closed)
+  const parentWorkspaceId = (context as any).workspaceId;
+  if (!parentWorkspaceId || typeof parentWorkspaceId !== 'string' || parentWorkspaceId.trim() === '') {
+    throw new Error('Parent execution context lacks valid workspace identity for sub-workflow invocation.');
+  }
+
+  // 4. Verify existence of target sub-workflow in parent workspace
+  const targetWorkflow = workflowStore.getById(subWorkflowId, parentWorkspaceId.trim());
+  if (!targetWorkflow) {
+    throw new Error(`Target sub-workflow "${subWorkflowId}" does not exist in workspace.`);
   }
 
   const newCallStack = [...callStack, subWorkflowId];
@@ -49,9 +55,9 @@ export const subWorkflowDriver: NodeDriver = async (context, resolvedConfig) => 
     $depth: newCallStack.length,
   };
 
-  // 4. Enqueue child workflow execution
+  // 5. Enqueue child workflow execution with validated parent workspace
   const childExecution = await executionQueue.enqueue(subWorkflowId, childPayload, {
-    workspaceId: (context as any).workspaceId || 'ws_default',
+    workspaceId: parentWorkspaceId.trim(),
   });
 
   const waitForCompletion = resolvedConfig.waitForCompletion !== false;

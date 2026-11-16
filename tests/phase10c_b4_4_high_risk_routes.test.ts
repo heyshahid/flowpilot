@@ -536,6 +536,8 @@ describe('Phase 10C-B4.4: High-Risk Unprotected Route Migration & Storage Scopin
       const validItem = await scheduleStore.getById(saved.id, 'ws_tenant_b');
       expect(validItem).not.toBeNull();
       expect(validItem?.id).toBe(saved.id);
+
+      await scheduleStore.delete(saved.id, 'ws_tenant_b');
     });
 
     it('should throw error when webhookStore.rotateSecret is invoked with mismatched workspaceId', async () => {

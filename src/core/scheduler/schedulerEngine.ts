@@ -96,9 +96,13 @@ export class SchedulerEngine {
       },
     };
 
+    if (!schedule.workspaceId || typeof schedule.workspaceId !== 'string' || schedule.workspaceId.trim() === '') {
+      throw new Error(`Schedule "${schedule.id}" lacks valid workspace identity.`);
+    }
+
     // Enqueue in FlowPilot Execution Queue
     const execution = await executionQueue.enqueue(schedule.workflowId, payload, {
-      workspaceId: schedule.workspaceId || 'ws_default',
+      workspaceId: schedule.workspaceId.trim(),
     });
 
     // Record run and advance nextRunAt in storage

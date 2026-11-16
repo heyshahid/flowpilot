@@ -232,6 +232,13 @@ async function handleWebhookRequest(
 
   // 8. Trigger associated workflow in Phase 4 Execution Engine
   try {
+    if (!webhook.workspaceId || typeof webhook.workspaceId !== 'string' || webhook.workspaceId.trim() === '') {
+      return NextResponse.json(
+        { success: false, error: 'Webhook configuration lacks valid workspace identity.', code: 'INVALID_WORKSPACE' },
+        { status: 500 }
+      );
+    }
+
     const execution = await executionQueue.enqueue(
       webhook.workflowId,
       {
@@ -245,7 +252,7 @@ async function handleWebhookRequest(
           timestamp: new Date().toISOString(),
         },
       },
-      { workspaceId: webhook.workspaceId || 'ws_default' }
+      { workspaceId: webhook.workspaceId.trim() }
     );
 
     const durationMs = Date.now() - start;
