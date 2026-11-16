@@ -34,6 +34,9 @@ export class ExecutionWorker {
     if (!record) {
       throw new Error(`Execution record "${executionId}" does not exist.`);
     }
+    if (!record.workspaceId || typeof record.workspaceId !== 'string' || record.workspaceId.trim() === '') {
+      throw new Error(`Execution record "${executionId}" is missing a valid workspace identity.`);
+    }
 
     const stateHistory = [...record.stateHistory];
     const updateStatus = async (
@@ -66,7 +69,7 @@ export class ExecutionWorker {
       // 3. Retrieve Workflow Graph
       const workflow = workflowStore.getById(workflowId, record.workspaceId);
       if (!workflow) {
-        throw new Error(`Workflow with ID "${workflowId}" was not found.`);
+        throw new Error(`Workflow with ID "${workflowId}" was not found in workspace "${record.workspaceId}".`);
       }
 
       // 4. Generate Execution Plan (Topological DAG, stages, cycles check)
@@ -166,7 +169,7 @@ export class ExecutionWorker {
               steps: stepsContext,
               signal,
             };
-            (nodeContext as any).workspaceId = record?.workspaceId || workflow.workspaceId;
+            (nodeContext as any).workspaceId = record!.workspaceId;
 
             try {
               // Context for expression resolution

@@ -69,26 +69,15 @@ export class AIProviderRegistry {
   }
 
   /**
-   * Securely retrieve the stored API key for a provider from CredentialVault or env
+   * Securely retrieve the stored API key for a provider from system credentials or env
    */
   public getApiKeyForProvider(providerId: AIProviderId): string | undefined {
     if (providerId === 'mock') return 'mock-key';
 
-    // 1. Check database/storage credential vault
-    const creds = credentialStore.listSync();
-    const matchingCred = creds.find(
-      (c) => c.integrationId === providerId || c.id === `cred_ai_${providerId}`
-    );
-
-    if (matchingCred && matchingCred.encryptedData) {
-      try {
-        const decrypted = CredentialVault.decrypt<{ apiKey?: string; token?: string }>(matchingCred.encryptedData);
-        if (decrypted.apiKey || decrypted.token) {
-          return decrypted.apiKey || decrypted.token;
-        }
-      } catch {
-        // Fall back to env
-      }
+    // 1. Resolve from dedicated platform system credential mechanism (isolated from tenant credentials)
+    const systemKey = credentialStore.getSystemApiKey(providerId);
+    if (systemKey) {
+      return systemKey;
     }
 
     // 2. Check environment variables

@@ -87,10 +87,16 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
       expect(saved.maskedPreview.apiKey).toContain('••••');
 
       // Verify listing masks decrypted secrets
-      const all = await credentialStore.list();
+      const all = await credentialStore.list({ workspaceId: saved.workspaceId || 'ws_default' });
       const found = all.find((c) => c.id === saved.id);
       expect(found).toBeDefined();
       expect((found as any).data).toBeUndefined();
+
+      // Verify fail-closed listing when workspaceId is missing or cross-workspace
+      await expect((credentialStore as any).list()).rejects.toThrow('Workspace identity is required');
+      expect(() => (credentialStore as any).listSync()).toThrow('Workspace identity is required');
+      const crossList = await credentialStore.list({ workspaceId: 'ws_other_tenant' });
+      expect(crossList.find((c) => c.id === saved.id)).toBeUndefined();
 
       // Verify decrypted retrieval
       const decrypted = await credentialStore.getDecryptedData<{ apiKey: string }>(saved.id);
@@ -330,10 +336,14 @@ describe('Phase 5: Core Integrations & Production Webhooks', () => {
       expect(plan.stages.length).toBe(4);
 
       // Enqueue execution via ExecutionQueue with mock webhook payload
-      const queuedJob = await executionQueue.enqueue(crmWorkflow!.id, {
-        customerEmail: 'octocat@github.com',
-        eventType: 'customer.sync',
-      });
+      const queuedJob = await executionQueue.enqueue(
+        crmWorkflow!.id,
+        {
+          customerEmail: 'octocat@github.com',
+          eventType: 'customer.sync',
+        },
+        { workspaceId: crmWorkflow!.workspaceId || 'ws_default' }
+      );
 
       expect(queuedJob.id).toBeDefined();
       expect(queuedJob.id).toMatch(/^exec_/);

@@ -39,11 +39,16 @@ export class ExecutionQueue {
   public async enqueue(
     workflowId: string,
     payload: Record<string, unknown> = {},
-    options: { maxRetries?: number; workspaceId?: string } = {}
+    options: { maxRetries?: number; workspaceId: string }
   ): Promise<WorkflowExecutionRecord> {
-    const workflow = workflowStore.getById(workflowId, options.workspaceId);
+    if (!options?.workspaceId || typeof options.workspaceId !== 'string' || options.workspaceId.trim() === '') {
+      throw new Error('Workspace identity is required to enqueue workflow execution.');
+    }
+
+    const workspaceId = options.workspaceId.trim();
+    const workflow = workflowStore.getById(workflowId, workspaceId);
     if (!workflow) {
-      throw new Error(`Workflow with ID "${workflowId}" does not exist.`);
+      throw new Error(`Workflow with ID "${workflowId}" was not found in workspace "${workspaceId}".`);
     }
 
     const executionId = `exec_${Math.random().toString(36).substring(2, 10)}`;
@@ -53,7 +58,7 @@ export class ExecutionQueue {
       id: executionId,
       workflowId,
       workflowName: workflow.name,
-      workspaceId: workflow.workspaceId || options.workspaceId || 'ws_default',
+      workspaceId: workflow.workspaceId,
       status: 'QUEUED',
       trigger: {
         type: workflow.nodes.find((n) => n.category === 'trigger')?.type || 'trigger.manual',
@@ -136,6 +141,9 @@ export class ExecutionQueue {
     const record = await executionStore.getById(executionId);
     if (!record) {
       throw new Error(`Execution record "${executionId}" not found.`);
+    }
+    if (!record.workspaceId || typeof record.workspaceId !== 'string' || record.workspaceId.trim() === '') {
+      throw new Error(`Execution record "${executionId}" is missing a valid workspace identity.`);
     }
 
     if (!RetryManager.isEligibleForRetry(record)) {

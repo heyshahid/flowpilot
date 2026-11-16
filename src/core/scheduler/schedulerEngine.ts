@@ -97,7 +97,9 @@ export class SchedulerEngine {
     };
 
     // Enqueue in FlowPilot Execution Queue
-    const execution = await executionQueue.enqueue(schedule.workflowId, payload);
+    const execution = await executionQueue.enqueue(schedule.workflowId, payload, {
+      workspaceId: schedule.workspaceId || 'ws_default',
+    });
 
     // Record run and advance nextRunAt in storage
     await scheduleStore.recordRun(schedule.id, execution.id, runTime);

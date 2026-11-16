@@ -232,17 +232,21 @@ async function handleWebhookRequest(
 
   // 8. Trigger associated workflow in Phase 4 Execution Engine
   try {
-    const execution = await executionQueue.enqueue(webhook.workflowId, {
-      ...payload,
-      _webhook: {
-        id: webhook.id,
-        name: webhook.name,
-        token: webhook.token,
-        method,
-        clientIp,
-        timestamp: new Date().toISOString(),
+    const execution = await executionQueue.enqueue(
+      webhook.workflowId,
+      {
+        ...payload,
+        _webhook: {
+          id: webhook.id,
+          name: webhook.name,
+          token: webhook.token,
+          method,
+          clientIp,
+          timestamp: new Date().toISOString(),
+        },
       },
-    });
+      { workspaceId: webhook.workspaceId || 'ws_default' }
+    );
 
     const durationMs = Date.now() - start;
 

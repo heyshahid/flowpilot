@@ -68,7 +68,7 @@ describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
   describe('2. Natural Language Workflow Generation & Registry Validation', () => {
     it('should generate a valid visual workflow DAG from a prompt', async () => {
       const prompt = 'When a customer submits a form, check their budget > $5000, send an urgent notification to Slack, and email welcome.';
-      const proposal = await WorkflowGenerator.generate(prompt);
+      const proposal = await WorkflowGenerator.generate(prompt, { workspaceId: 'ws_default' });
 
       expect(proposal.name).toBeDefined();
       expect(proposal.nodes.length).toBeGreaterThanOrEqual(3);
@@ -89,30 +89,42 @@ describe('Phase 7: AI Workflow Assistant & Intelligent Automation', () => {
 
     it('should identify required integrations and missing credentials', async () => {
       const prompt = 'Capture form leads and alert Slack #vip-leads';
-      const proposal = await WorkflowGenerator.generate(prompt);
+      const proposal = await WorkflowGenerator.generate(prompt, { workspaceId: 'ws_default' });
 
       expect(proposal.requiredIntegrations).toContain('slack');
       expect(proposal.explanation).toBeDefined();
       expect(proposal.usage.totalTokens).toBeGreaterThan(0);
     });
 
-    it('should reject empty prompts', async () => {
-      await expect(WorkflowGenerator.generate('')).rejects.toThrow('User prompt cannot be empty');
+    it('should reject empty prompts or missing workspaceId', async () => {
+      await expect(WorkflowGenerator.generate('', { workspaceId: 'ws_default' })).rejects.toThrow('User prompt cannot be empty');
+      await expect((WorkflowGenerator as any).generate('Test prompt', {})).rejects.toThrow('Workspace identity is required');
+      await expect((WorkflowGenerator as any).generate('Test prompt', { workspaceId: '' })).rejects.toThrow('Workspace identity is required');
     });
 
     it('should refine an existing workflow based on follow-up prompt', async () => {
-      const initial = await WorkflowGenerator.generate('Webhook form lead');
+      const initial = await WorkflowGenerator.generate('Webhook form lead', { workspaceId: 'ws_default' });
       const refined = await GraphRefiner.refine(
         {
           name: initial.name,
           nodes: initial.nodes,
           edges: initial.edges,
         },
-        'Add a condition to check if customer is from USA'
+        'Add a condition to check if customer is from USA',
+        { workspaceId: 'ws_default' }
       );
 
       expect(refined.isValid).toBe(true);
       expect(refined.nodes.length).toBeGreaterThanOrEqual(3);
+
+      // Reject refinement without workspaceId
+      await expect(
+        (GraphRefiner as any).refine(
+          { name: initial.name, nodes: initial.nodes, edges: initial.edges },
+          'Add condition',
+          {}
+        )
+      ).rejects.toThrow('Workspace identity is required');
     });
   });
 

@@ -17,12 +17,15 @@ export class GraphRefiner {
       edges: any[];
     },
     refinementPrompt: string,
-    options?: {
+    options: {
       provider?: AIProviderId;
       model?: string;
-      workspaceId?: string;
+      workspaceId: string;
     }
   ): Promise<GeneratedWorkflowProposal> {
+    if (!options?.workspaceId || typeof options.workspaceId !== 'string' || options.workspaceId.trim() === '') {
+      throw new Error('Workspace identity is required for workflow refinement.');
+    }
     if (!refinementPrompt || refinementPrompt.trim().length === 0) {
       throw new Error('Refinement prompt cannot be empty.');
     }
@@ -69,10 +72,13 @@ export class GraphRefiner {
       'generate_workflow',
       chatResponse.usage,
       chatResponse.durationMs,
-      options?.workspaceId || 'ws_default'
+      options.workspaceId.trim()
     );
 
     // Reuse the sanitization & validation logic in WorkflowGenerator
-    return WorkflowGenerator.generate(refinementPrompt, options);
+    return WorkflowGenerator.generate(refinementPrompt, {
+      ...options,
+      workspaceId: options.workspaceId.trim(),
+    });
   }
 }

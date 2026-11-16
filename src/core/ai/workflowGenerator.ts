@@ -49,12 +49,15 @@ export class WorkflowGenerator {
    */
   public static async generate(
     userPrompt: string,
-    options?: {
+    options: {
       provider?: AIProviderId;
       model?: string;
-      workspaceId?: string;
+      workspaceId: string;
     }
   ): Promise<GeneratedWorkflowProposal> {
+    if (!options?.workspaceId || typeof options.workspaceId !== 'string' || options.workspaceId.trim() === '') {
+      throw new Error('Workspace identity is required for workflow generation.');
+    }
     if (!userPrompt || userPrompt.trim().length === 0) {
       throw new Error('User prompt cannot be empty.');
     }
@@ -80,7 +83,7 @@ export class WorkflowGenerator {
       'generate_workflow',
       chatResponse.usage,
       chatResponse.durationMs,
-      options?.workspaceId || 'ws_default'
+      options.workspaceId.trim()
     );
 
     let parsed = chatResponse.parsedJson;
@@ -191,9 +194,7 @@ export class WorkflowGenerator {
 
     // 4. Verify Credentials for Required Integrations
     const requiredIntegrations = Array.from(requiredIntegrationsSet);
-    const existingCreds = credentialStore.listSync(
-      options?.workspaceId ? { workspaceId: options.workspaceId } : undefined
-    );
+    const existingCreds = credentialStore.listSync({ workspaceId: options.workspaceId.trim() });
     const missingCredentials: string[] = [];
 
     for (const integ of requiredIntegrations) {

@@ -50,7 +50,9 @@ export const subWorkflowDriver: NodeDriver = async (context, resolvedConfig) => 
   };
 
   // 4. Enqueue child workflow execution
-  const childExecution = await executionQueue.enqueue(subWorkflowId, childPayload);
+  const childExecution = await executionQueue.enqueue(subWorkflowId, childPayload, {
+    workspaceId: (context as any).workspaceId || 'ws_default',
+  });
 
   const waitForCompletion = resolvedConfig.waitForCompletion !== false;
   const timeoutMs = Number(resolvedConfig.timeoutMs || 15000);

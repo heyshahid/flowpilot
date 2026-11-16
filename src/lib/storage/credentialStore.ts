@@ -219,19 +219,38 @@ export class CredentialStore {
     }
   }
 
-  public listSync(filter?: { integrationId?: string; workspaceId?: string }): CredentialRecord[] {
-    let list = Array.from(this.inMemoryCredentials.values());
-    if (filter?.workspaceId) {
-      list = list.filter((c) => c.workspaceId === filter.workspaceId);
+  public listSync(filter: { workspaceId: string; integrationId?: string }): CredentialRecord[] {
+    if (!filter?.workspaceId || typeof filter.workspaceId !== 'string' || filter.workspaceId.trim() === '') {
+      throw new Error('Workspace identity is required for credential listing.');
     }
-    if (filter?.integrationId) {
+    const workspaceId = filter.workspaceId.trim();
+    let list = Array.from(this.inMemoryCredentials.values());
+    list = list.filter((c) => c.workspaceId === workspaceId);
+    if (filter.integrationId) {
       list = list.filter((c) => c.integrationId === filter.integrationId);
     }
     return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
-  public async list(filter?: { integrationId?: string; workspaceId?: string }): Promise<CredentialRecord[]> {
+  public async list(filter: { workspaceId: string; integrationId?: string }): Promise<CredentialRecord[]> {
     return this.listSync(filter);
+  }
+
+  /**
+   * Retrieves platform-level system API key for AI provider integrations.
+   * Completely isolated from tenant credential storage.
+   */
+  public getSystemApiKey(providerId: string): string | undefined {
+    switch (providerId) {
+      case 'openai':
+        return process.env.OPENAI_API_KEY;
+      case 'anthropic':
+        return process.env.ANTHROPIC_API_KEY;
+      case 'gemini':
+        return process.env.GEMINI_API_KEY;
+      default:
+        return undefined;
+    }
   }
 
   public async delete(id: string, workspaceId?: string): Promise<boolean> {

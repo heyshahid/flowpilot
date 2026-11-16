@@ -9,6 +9,7 @@ import { httpRequestDriver } from '../src/core/runtime/drivers/httpRequest';
 import { SSRFProtectionViolationException } from '../src/core/security/ssrf';
 import { maskSensitiveData } from '../src/core/security/masking';
 import { executionQueue } from '../src/core/execution/queue';
+import { executionWorker } from '../src/core/execution/worker';
 import { executionStore } from '../src/lib/storage/executionStore';
 import { workflowStore } from '../src/lib/storage/workflowStore';
 import { WorkflowGraph } from '../src/core/types/workflow';
@@ -273,16 +274,20 @@ describe('Phase 4: Backend Workflow Execution Engine', () => {
       workflowStore.save(testWf);
 
       // 2. Enqueue workflow execution
-      const execution = await executionQueue.enqueue(testWf.id, {
-        leadName: 'Alex Mercer',
-      });
+      const execution = await executionQueue.enqueue(
+        testWf.id,
+        { leadName: 'Alex Mercer' },
+        { workspaceId: testWf.workspaceId || 'ws_default' }
+      );
 
       expect(execution.id).toBeDefined();
+      expect(execution.workspaceId).toBe(testWf.workspaceId);
       expect(execution.status).toBe('QUEUED');
 
       // 3. Wait for background worker completion
       const completed = await executionQueue.waitForExecution(execution.id, 5000);
       expect(completed.status).toBe('COMPLETED');
+      expect(completed.workspaceId).toBe(testWf.workspaceId);
       expect(completed.durationMs).toBeGreaterThanOrEqual(0);
       expect(completed.traces.length).toBe(3);
 
@@ -307,7 +312,7 @@ describe('Phase 4: Backend Workflow Execution Engine', () => {
       cancelWf.edges = [{ id: 'e1', source: cancelWf.nodes[0].id, target: 'delay_step' }];
       workflowStore.save(cancelWf);
 
-      const enqueued = await executionQueue.enqueue(cancelWf.id, {});
+      const enqueued = await executionQueue.enqueue(cancelWf.id, {}, { workspaceId: cancelWf.workspaceId || 'ws_default' });
       // Immediately cancel
       const cancelled = await executionQueue.cancel(enqueued.id);
       expect(cancelled).toBe(true);
@@ -333,7 +338,7 @@ describe('Phase 4: Backend Workflow Execution Engine', () => {
       failWf.edges = [{ id: 'e1', source: failWf.nodes[0].id, target: 'bad_email' }];
       workflowStore.save(failWf);
 
-      const enqueued = await executionQueue.enqueue(failWf.id, {});
+      const enqueued = await executionQueue.enqueue(failWf.id, {}, { workspaceId: failWf.workspaceId || 'ws_default' });
       const completed = await executionQueue.waitForExecution(enqueued.id, 5000);
       expect(completed.status).toBe('FAILED');
       expect(completed.retryCount).toBe(0);
@@ -342,6 +347,64 @@ describe('Phase 4: Backend Workflow Execution Engine', () => {
       const retried = await executionQueue.retry(completed.id);
       expect(retried.status).toBe('QUEUED');
       expect(retried.retryCount).toBe(1);
+    });
+
+    it('should reject execution without workspaceId or cross-workspace', async () => {
+      const wf = workflowStore.create({
+        name: 'Tenant Isolation Pipeline',
+        triggerType: 'trigger.manual',
+        workspaceId: 'ws_tenant_alpha',
+      });
+
+      // Missing / empty workspaceId
+      await expect(
+        (executionQueue as any).enqueue(wf.id, {}, {})
+      ).rejects.toThrow('Workspace identity is required');
+
+      await expect(
+        (executionQueue as any).enqueue(wf.id, {}, { workspaceId: '' })
+      ).rejects.toThrow('Workspace identity is required');
+
+      // Cross-workspace attempt
+      await expect(
+        executionQueue.enqueue(wf.id, {}, { workspaceId: 'ws_tenant_beta' })
+      ).rejects.toThrow('was not found in workspace "ws_tenant_beta"');
+    });
+
+    it('should fail closed in execution worker if execution record lacks workspaceId', async () => {
+      const wf = workflowStore.create({
+        name: 'Worker Isolation Test',
+        triggerType: 'trigger.manual',
+        workspaceId: 'ws_worker_test',
+      });
+
+      const badExecId = 'exec_corrupt_no_ws';
+      const now = new Date().toISOString();
+      await executionStore.create({
+        id: badExecId,
+        workflowId: wf.id,
+        workflowName: wf.name,
+        workspaceId: '' as any,
+        status: 'QUEUED',
+        trigger: { type: 'trigger.manual', payload: {}, timestamp: now },
+        startedAt: now,
+        durationMs: 0,
+        traces: [],
+        stateHistory: [{ status: 'QUEUED', timestamp: now }],
+        retryCount: 0,
+        maxRetries: 3,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await expect(
+        executionWorker.processJob({
+          executionId: badExecId,
+          workflowId: wf.id,
+          payload: {},
+          signal: new AbortController().signal,
+        })
+      ).rejects.toThrow('missing a valid workspace identity');
     });
   });
 });
