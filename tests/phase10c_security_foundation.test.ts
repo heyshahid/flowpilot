@@ -27,6 +27,7 @@ import {
   verifyDummyPassword,
   DUMMY_PASSWORD_HASH,
   CryptographicSemaphore,
+  argon2Semaphore,
   SecurityOverloadError,
   SecurityTimeoutError,
 } from '../src/lib/security/argon2';
@@ -106,27 +107,82 @@ describe('Phase 10C-B1: Security Foundation', () => {
   });
 
   describe('4. Cryptographic Semaphore Concurrency Limit', () => {
-    it('should limit active concurrent operations to configured maximum', async () => {
-      const maxConcurrent = 2;
-      const sem = new CryptographicSemaphore(maxConcurrent, 10, 3000);
+    it('should verify the configured Argon2id semaphore limit is exactly 4', () => {
+      const status = argon2Semaphore.getStatus();
+      expect(status.maxConcurrent).toBe(4);
+      expect(status.maxQueueDepth).toBe(16);
+    });
 
-      let peakRunning = 0;
-      let currentlyRunning = 0;
+    it('should permit exactly four active operations and ensure a fifth operation waits in the queue', async () => {
+      const sem = new CryptographicSemaphore(4, 16, 3000);
 
-      const makeTask = (delayMs: number) => () =>
-        sem.run(async () => {
-          currentlyRunning++;
-          peakRunning = Math.max(peakRunning, currentlyRunning);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          currentlyRunning--;
-          return 'ok';
-        });
+      let releaseTask1: (() => void) | null = null;
+      let releaseRemaining = false;
+      const remainingResolvers: Array<() => void> = [];
 
-      const promises = [makeTask(50)(), makeTask(50)(), makeTask(50)(), makeTask(50)()];
-      const results = await Promise.all(promises);
+      const makeHoldableTask = (id: number) => () =>
+        sem.run(
+          () =>
+            new Promise<string>((resolve) => {
+              if (id === 1) {
+                releaseTask1 = () => resolve('task_1_done');
+              } else {
+                if (releaseRemaining) {
+                  resolve(`task_${id}_done`);
+                } else {
+                  remainingResolvers.push(() => resolve(`task_${id}_done`));
+                }
+              }
+            })
+        );
 
-      expect(results).toEqual(['ok', 'ok', 'ok', 'ok']);
-      expect(peakRunning).toBeLessThanOrEqual(maxConcurrent);
+      // Launch 4 active operations
+      const p1 = makeHoldableTask(1)();
+      const p2 = makeHoldableTask(2)();
+      const p3 = makeHoldableTask(3)();
+      const p4 = makeHoldableTask(4)();
+
+      // Check semaphore status: exactly 4 running, 0 queued
+      expect(sem.getStatus().running).toBe(4);
+      expect(sem.getStatus().queued).toBe(0);
+
+      // Launch the 5th operation: MUST wait in the queue rather than starting immediately
+      const p5 = makeHoldableTask(5)();
+
+      expect(sem.getStatus().running).toBe(4);
+      expect(sem.getStatus().queued).toBe(1);
+
+      // Launch a 6th operation: also waits in queue
+      const p6 = makeHoldableTask(6)();
+      expect(sem.getStatus().running).toBe(4);
+      expect(sem.getStatus().queued).toBe(2);
+
+      // Release the 1st running operation
+      releaseTask1!();
+      await p1;
+      await new Promise((r) => setTimeout(r, 25));
+
+      // 5th task has now transitioned from queued to active!
+      expect(sem.getStatus().running).toBe(4);
+      expect(sem.getStatus().queued).toBe(1);
+
+      // Release all remaining tasks
+      releaseRemaining = true;
+      remainingResolvers.forEach((resolve) => resolve());
+
+      const results = await Promise.all([p2, p3, p4, p5, p6]);
+
+      expect(results).toEqual([
+        'task_2_done',
+        'task_3_done',
+        'task_4_done',
+        'task_5_done',
+        'task_6_done',
+      ]);
+
+      await new Promise((r) => setTimeout(r, 25));
+      expect(sem.getStatus().running).toBe(0);
+      expect(sem.getStatus().queued).toBe(0);
     });
   });
 
@@ -535,7 +591,7 @@ describe('Phase 10C-B1: Security Foundation', () => {
     });
   });
 
-  describe('15. Production Configuration Validation', () => {
+  describe('15. Production Configuration & Secret Entropy Validation', () => {
     it('should reject missing or weak SESSION_SECRET in production mode', () => {
       expect(() => {
         validateSecurityConfig({
@@ -553,7 +609,7 @@ describe('Phase 10C-B1: Security Foundation', () => {
           SESSION_SECRET: 'replace_with_secure_random_64_character_session_secret_here',
           ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
         });
-      }).toThrow('SESSION_SECRET is set to an insecure default/placeholder');
+      }).toThrow('contains an insecure placeholder or common pattern');
 
       expect(() => {
         validateSecurityConfig({
@@ -565,30 +621,73 @@ describe('Phase 10C-B1: Security Foundation', () => {
       }).toThrow('must be at least 32 characters');
     });
 
+    it('should reject secrets that meet length threshold but lack cryptographic entropy', () => {
+      // 1. Repeated character (length 64, but 0 entropy)
+      expect(() => {
+        validateSecurityConfig({
+          NODE_ENV: 'production',
+          FLOWPILOT_AUTH_MODE: 'session',
+          SESSION_SECRET: 'a'.repeat(64),
+          ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
+        });
+      }).toThrow('insufficient character diversity');
+
+      // 2. Simple repeating cycle (low unique count)
+      expect(() => {
+        validateSecurityConfig({
+          NODE_ENV: 'production',
+          FLOWPILOT_AUTH_MODE: 'session',
+          SESSION_SECRET: 'abcdef12'.repeat(8),
+          ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
+        });
+      }).toThrow('insufficient character diversity');
+
+      // 3. Dictionary placeholder phrase
+      expect(() => {
+        validateSecurityConfig({
+          NODE_ENV: 'production',
+          FLOWPILOT_AUTH_MODE: 'session',
+          SESSION_SECRET: 'my_production_password_is_very_long_and_secret_here!',
+          ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
+        });
+      }).toThrow('contains an insecure placeholder');
+    });
+
     it('should reject non-session FLOWPILOT_AUTH_MODE in production', () => {
       expect(() => {
         validateSecurityConfig({
           NODE_ENV: 'production',
           FLOWPILOT_AUTH_MODE: 'mock',
-          SESSION_SECRET: 'a_very_secure_and_sufficiently_long_production_session_secret_123',
+          SESSION_SECRET: 'c8f7a6b5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a32',
           ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
         });
       }).toThrow('FLOWPILOT_AUTH_MODE must be "session" in production');
     });
 
-    it('should accept valid production configuration', () => {
-      const validSecret = 'valid_production_session_secret_32_bytes_long_entropy!';
+    it('should accept properly generated cryptographic secrets in production', () => {
+      // 1. 64-character hex secret (32 bytes / 256 bits)
+      const validHexSecret = 'c8f7a6b5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a32';
       const config = validateSecurityConfig({
         NODE_ENV: 'production',
         FLOWPILOT_AUTH_MODE: 'session',
-        SESSION_SECRET: validSecret,
+        SESSION_SECRET: validHexSecret,
         ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
       });
 
       expect(config.isProduction).toBe(true);
       expect(config.authMode).toBe('session');
-      expect(config.sessionSecret).toBe(validSecret);
+      expect(config.sessionSecret).toBe(validHexSecret);
       expect(config.allowedOrigins).toEqual(['https://app.flowpilot.dev']);
+
+      // 2. 43-character base64url secret (32 bytes / 258 bits)
+      const validBase64Secret = 'v_K8w9x_Z2m1N4p7Q3r5S6t8U0w2Y4a6C8e0G2i4K6m';
+      const configBase64 = validateSecurityConfig({
+        NODE_ENV: 'production',
+        FLOWPILOT_AUTH_MODE: 'session',
+        SESSION_SECRET: validBase64Secret,
+        ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
+      });
+      expect(configBase64.sessionSecret).toBe(validBase64Secret);
     });
   });
 
