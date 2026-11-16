@@ -16,7 +16,15 @@ Before Phase 10C-B implementation begins, ensure the following gates are cleared
 
 - [x] **Phase 10B Formally Closed:** PostgreSQL foundation, repository layer, and migration utilities accepted.
 - [x] **Phase 10C-A Assessment Accepted:** Architecture specification and STRIDE threat model reviewed.
-- [x] **7 Pre-Implementation Corrections Applied:** Test counts (14), rate limits, idle expiry, CSRF secrets, post-reset re-login, idempotent audit migration, and test timing assertions fully reconciled.
+- [x] **Final Pre-Implementation Corrections Applied:**
+  - Test count reconciled (exactly 14 security test scenarios).
+  - Rate-limit policy unified (10/min normal, 11-20 progressive backoff, >20/15min hard block).
+  - Dual session expiration (14-day absolute + 2-hour idle) specified in `validateSession()`.
+  - CSRF terminology corrected to "signed HMAC-SHA256" with automatic rolling renewal.
+  - Decoupled B1 rate limiter alert callback from B3 email adapter.
+  - Re-login requirement enforced after password reset (no auto-session issuance).
+  - Idempotent audit migration specified for the 33 historical recommendation records.
+  - Relative timing test assertions established (non-brittle CI execution).
 - [ ] **Project Owner Authorization to Begin 10C-B1:** Explicit approval to start Sub-Phase 10C-B1 only.
 - [ ] **Execution Environment Verified:** Local Node.js v24.22.1 runner confirmed clean; target deployment Node 20 LTS.
 - [ ] **Backup Snapshot Created:** Pre-implementation snapshot of `.data/` and codebase established.
@@ -32,7 +40,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 │                      PHASE 10C-B EXECUTION PHASES                      │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. Phase 10C-B1: Security Foundation                                   │
-│    - Argon2id, token utilities, CSRF, rate limiter, env config        │
+│    - Argon2id, token utilities, signed CSRF, rate limiter, env config │
 │    - Review & Approval Gate ──►                                        │
 │                                                                        │
 │ 2. Phase 10C-B2: Database & Session Engine                             │
@@ -41,6 +49,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 │                                                                        │
 │ 3. Phase 10C-B3: Authentication Backend                                │
 │    - Register, login, verify email, reset password, logout, API routes │
+│    - Connect EmailAdapter to B1 alert callback                        │
 │    - Review & Approval Gate ──►                                        │
 │                                                                        │
 │ 4. Phase 10C-B4: Workspace Security & Audit                            │
@@ -70,14 +79,15 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 - [ ] **Argon2id Utility (`src/lib/security/argon2.ts`):**
   - Configure OWASP parameters (`m=65536`, `t=3`, `p=4`).
   - Precompute static `DUMMY_HASH` for timing normalization on non-existent accounts.
-  - Implement concurrency semaphore limiting parallel hashing operations to 4 jobs per process.
+  - Implement hashing semaphore limiting concurrent hashes to 4 parallel jobs per process.
 - [ ] **Cryptographic Token Utilities (`src/lib/security/tokens.ts`):**
   - `generateSecureToken(bytes = 32)`: Generates 256-bit cryptographic entropy.
   - `hashToken(rawToken: string)`: Computes SHA-256 hash.
   - `timingSafeEqual(a: string, b: string)`: Constant-time comparison.
 - [ ] **CSRF Protection Engine (`src/lib/security/csrf.ts`):**
-  - Mint encrypted HMAC-SHA256 CSRF token combining `sessionId + timestamp + nonce`.
+  - Mint cryptographically signed HMAC-SHA256 CSRF token combining `sessionId + timestamp + nonce`.
   - Validate custom header `x-csrf-token` against active session with 24-hour timestamp freshness.
+  - Implement rolling renewal: Automatically refresh CSRF cookie on authenticated `GET` requests if existing token is older than 12 hours.
   - Dual-secret rotation support (`SESSION_SECRET` and `SESSION_SECRET_PREVIOUS`).
   - Validate `Origin` and `Referer` against `ALLOWED_ORIGINS`.
 - [ ] **Rate Limiting Engine (`src/lib/security/rateLimiter.ts`):**
@@ -85,7 +95,8 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
     - Normal: up to 10 attempts / 1 min.
     - Progressive delay: 11–20 attempts / 15 min (1s, 2s, 4s backoff).
     - Hard block: >20 attempts / 15 min returns `HTTP 429`.
-    - Per-Account protection: 5 consecutive failed attempts challenges requesting IP and dispatches security alert email.
+    - Per-Account protection: 5 consecutive failed attempts challenges requesting IP and invokes security alert callback.
+  - **Decoupled Architecture:** Rate limiter has **zero dependencies on an email library**. Emits security events via abstract callback `onSecurityAlert(callback)`.
   - Trusted reverse-proxy IP resolution via `TRUSTED_PROXY_CIDRS`.
 - [ ] **Sub-Phase 10C-B1 Review:** Submit foundation report and halt for review.
 
@@ -113,6 +124,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 - [ ] **Email Provider Adapter (`src/lib/email/`):**
   - Interface `EmailAdapter`: `sendVerificationEmail`, `sendPasswordResetEmail`, `sendSecurityAlert`.
   - `DevelopmentEmailAdapter`: Logs masked recipient and verification link to debug logger; stores last token in memory fixture for tests. Zero raw secrets in production logs.
+  - **Connect to Rate Limiter:** Register `EmailAdapter.sendSecurityAlert` with the B1 rate limiter callback.
 - [ ] **Registration Route (`POST /api/v1/auth/register`):**
   - Input validation via Zod, Argon2id password hash, user created with `status: PENDING_VERIFICATION`.
   - Default workspace provisioned, user added as `OWNER`.
@@ -121,6 +133,8 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 - [ ] **Login Route (`POST /api/v1/auth/login`):**
   - Rate-limit check, user lookup, dummy hash fallback on missing account, Argon2id verification.
   - Rotates session token, sets `__Host-fp_session` cookie, emits `AUTH_LOGIN_SUCCESS` audit event.
+- [ ] **CSRF Token Route (`GET /api/v1/auth/csrf`):**
+  - Returns current signed CSRF token and sets fresh `fp_csrf_token` cookie for single-page applications.
 - [ ] **Email Verification Route (`POST /api/v1/auth/verify-email`):**
   - Validates token hash, marks token used atomically (`usedAt = NOW()`).
   - Transitions `User.status` to `ACTIVE`, sets `emailVerifiedAt = NOW()`, rotates session token.
@@ -129,7 +143,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 - [ ] **Password Reset Routes (`POST /api/v1/auth/forgot-password` & `POST /api/v1/auth/reset-password`):**
   - Forgot password returns constant-time generic response.
   - Reset password validates single-use token, updates password hash, **revokes all active sessions**, and clears session cookies.
-  - User is required to explicitly log in again with new password.
+  - **User is required to explicitly log in again with new password (no auto-session issuance).**
 - [ ] **Logout Route (`POST /api/v1/auth/logout`):**
   - Deletes active session row and clears cookie (`max-age=0`).
 - [ ] **Sub-Phase 10C-B3 Review:** Submit backend routes report and halt for review.
@@ -166,7 +180,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
 ### Sub-Phase 10C-B6: Security Testing & Regression Audit
 - [ ] Implement all **14 security test scenarios** in `tests/phase10c_auth_security.test.ts`:
   1. Argon2id password hashing and verification accuracy.
-  2. Dummy hash timing normalization (relative execution verification).
+  2. Dummy hash path execution and relative timing verification.
   3. Public user registration and default workspace provisioning.
   4. Restricted verification session enforcement (`EMAIL_VERIFICATION_REQUIRED`).
   5. Email verification token lifecycle (valid, expired, already-used, rate-limited resend).
@@ -177,7 +191,7 @@ In accordance with the project owner's execution strategy, Phase 10C-B is divide
   10. Session rotation on privilege elevation.
   11. Password reset, mass session revocation, and re-login enforcement.
   12. Brute-force rate limiting and progressive throttling backoff.
-  13. CSRF origin and token validation on mutating requests.
+  13. CSRF origin and signed token validation on mutating requests.
   14. Idempotent historical recommendation audit log retention verification.
 - [ ] Execute `npm test` to verify **264/264 tests pass across 18 test suites** (250 existing regression + 14 new Phase 10C security tests).
 - [ ] Execute `npx tsc --noEmit` to verify type safety.

@@ -109,19 +109,25 @@ Content-Type checks (such as `Content-Type: application/json`) alone do **not** 
 - For **browser-originated cookie requests**: If both `Origin` and `Referer` are missing on a state-changing route with a session cookie, the request is rejected unless accompanied by a verified CSRF token.
 - For **machine-to-machine / API clients** (e.g. CLI tools, external webhooks, worker daemons): Authenticated via scoped Bearer API tokens (`Authorization: Bearer fp_live_...`). These requests do not use browser session cookies and are validated against the cryptographic API token rather than the browser CSRF policy.
 
-### 3.3 CSRF Secret Architecture & Double-Submit Token Design
-1. **Secret Configuration (`SESSION_SECRET`):**
+### 3.3 Signed CSRF Token Architecture & Rolling Renewal
+1. **Cryptographic Terminology & Secret Configuration:**
+   - The token construction provides **integrity and authenticity** via an HMAC signature (it is **signed**, not encrypted).
    - Configured via environment variable `SESSION_SECRET` (minimum 32 bytes / 256 bits of cryptographic entropy).
    - Supports zero-downtime key rotation via dual secrets: `SESSION_SECRET` (active) and `SESSION_SECRET_PREVIOUS` (deprecated verification fallback).
 2. **Token Construction:**
    - The CSRF token is an HMAC-SHA256 signature over the session ID, timestamp, and a random cryptographic nonce:
      `token = base64url(sessionId + ":" + timestamp + ":" + nonce + ":" + hmac(sessionId + ":" + timestamp + ":" + nonce, SESSION_SECRET))`
 3. **Cookie & Header Delivery:**
-   - Minted on session creation and set in readable cookie `fp_csrf_token` (`SameSite=Lax; Secure; Path=/; Max-Age=1209600`).
+   - Minted on session creation and set in readable cookie `fp_csrf_token` (`SameSite=Lax; Secure; Path=/; Max-Age=86400` — 24 hours).
    - Browser client reads `fp_csrf_token` and transmits it in request header `x-csrf-token` on mutating requests.
 4. **Server-Side Validation:**
    - Server extracts `x-csrf-token`, verifies HMAC signature against `SESSION_SECRET` (or `SESSION_SECRET_PREVIOUS`), asserts timestamp freshness (max 24 hours), and validates that the `sessionId` embedded in the token matches the active session.
    - Missing or mismatched tokens return `HTTP 403 Forbidden` (`INVALID_CSRF_TOKEN`).
+5. **Automatic Rolling Renewal (Fix for 24h Expiration vs 14d Session):**
+   - Because the session lifetime is up to 14 days while the CSRF token validation window is 24 hours, the server implements **automatic rolling CSRF token renewal**:
+     - On any authenticated `GET` or page load, if the existing token's timestamp is older than 12 hours (half of its 24-hour lifetime), the server automatically mints and sets a refreshed `fp_csrf_token` cookie.
+     - A dedicated endpoint `GET /api/v1/auth/csrf` is provided for client-side single-page applications to fetch/renew the current signed CSRF token on demand.
+     - This guarantees that an active 14-day session never suffers unexpected CSRF rejections.
 
 ### 3.4 CORS Configuration
 - `Access-Control-Allow-Origin` is dynamically set to the verified matching origin from the allowlist.
@@ -142,18 +148,31 @@ To eliminate discrepancies between documentation and implementation, FlowPilot d
 | **Normal Execution** | Up to 10 attempts / 1 minute | Immediate execution (~80–120ms) | Per IP |
 | **Progressive Delay** | 11 to 20 attempts / 15 minutes | Enforces progressive artificial delay (1s, 2s, 4s backoff) | Per IP |
 | **Hard IP Throttling** | > 20 attempts / 15 minutes | Request rejected with `HTTP 429 Too Many Requests` | Per IP |
-| **Account Protection** | 5 consecutive failed password attempts | Requesting IP challenged with backoff / CAPTCHA; security alert email dispatched to owner | Per Account + IP |
+| **Account Protection** | 5 consecutive failed password attempts | Requesting IP challenged with backoff / CAPTCHA; security alert event emitted | Per Account + IP |
 | **Password Reset** | Max 3 requests / 1 hour | Request rejected with `HTTP 429 Too Many Requests` | Per Account |
 | **Email Resend** | Max 3 requests / 1 hour | Request rejected with `HTTP 429 Too Many Requests` | Per Account |
 
-### 4.2 Progressive Throttling vs. Permanent Account Lockout
+### 4.2 Progressive Throttling & Decoupled Event Architecture
 > [!WARNING]
 > **Anti-Denial-of-Service Policy:** Permanently locking an account after 5 failed attempts allows attackers to deliberately lock legitimate users out of their accounts (Denial of Service).
 
 FlowPilot implements **progressive throttling with IP-account separation**:
 - If an account experiences 5 consecutive bad passwords, the *requesting IP* is challenged with progressive backoff and temporary lockout.
-- The legitimate account owner is **not** globally locked out from their own trusted devices/IPs. An email alert is dispatched: `"Unusual login attempts detected on your FlowPilot account"`.
-- Global account suspension requires administrative intervention or manual password reset.
+- The legitimate account owner is **not** globally locked out from their own trusted devices/IPs.
+- **Decoupled Architecture for Sub-Phase 10C-B1:**
+  - In Sub-Phase 10C-B1, the rate limiter has **zero dependencies on an email sending library or provider**.
+  - When account threshold is reached, the limiter invokes an abstract callback/event listener:
+    ```typescript
+    export interface SecurityAlertEvent {
+      type: 'ACCOUNT_ATTACK_SUSPECTED' | 'IP_RATE_LIMIT_EXCEEDED';
+      email?: string;
+      ipAddress: string;
+      timestamp: Date;
+    }
+    // Callback registered by higher-level modules
+    rateLimiter.onSecurityAlert((event) => { /* Sub-Phase 10C-B3 attaches EmailAdapter */ });
+    ```
+  - In Sub-Phase 10C-B3, the `EmailAdapter` subscribes to this listener to dispatch alert emails to users.
 
 ### 4.3 Reverse-Proxy IP Security
 - The server reads client IP addresses via `x-forwarded-for` **only** if the immediate socket remote address matches a configured `TRUSTED_PROXY_CIDRS` allowlist (e.g. Cloudflare IP ranges, AWS ALB CIDRs, internal VPC).
@@ -170,7 +189,7 @@ FlowPilot implements **progressive throttling with IP-account separation**:
 
 ## 5. Token Persistence Schema Proposal
 
-*(Formal proposal for Prisma schema update in Phase 10C-B; **not implemented** in Phase 10C-A)*
+*(Formal proposal for Prisma schema update in Phase 10C-B2; **not implemented** in Phase 10C-A)*
 
 To securely persist email verification tokens, password reset tokens, and security challenges without altering existing core models, we propose adding a dedicated `AuthToken` model:
 
@@ -419,11 +438,12 @@ export interface EmailAdapter {
 | **Approved Decision** | Dual Expiration in validateSession | **APPROVED** | Enforces both 14-day absolute lifetime and 2-hour idle timeout on every lookup. |
 | **Approved Decision** | Re-Login After Password Reset | **APPROVED** | Zero automatic session issuance post-reset; user must re-authenticate with new password. |
 | **Approved Decision** | Unified Rate Limiting Policy | **APPROVED** | 10/min normal, 11-20/15min progressive backoff, >20/15min hard block, 5/account security challenge. |
+| **Approved Decision** | Decoupled Rate Limiter in B1 | **APPROVED** | B1 emits abstract alert events via callback interface; EmailAdapter connected in B3. |
+| **Approved Decision** | Signed CSRF with Rolling Renewal | **APPROVED** | HMAC-SHA256 signature with dual-key rotation; refreshed on active GET requests older than 12h. |
 | **Approved Decision** | Idempotent Audit Migration | **APPROVED** | Unique ID check (`id = hist_...`) prevents duplicate records on re-runs. |
 | **Approved Decision** | Relative Timing Test Assertions | **APPROVED** | Verifies dummy hash path execution without brittle millisecond CI flakiness. |
 | **Approved Decision** | Omit "Remember Me" in v1 | **APPROVED** | Consistent 14-day absolute / 2-hour idle session policy without false UI claims. |
 | **Proposed Detail** | `AuthToken` Prisma Model | **PROPOSED** | Persists email verification and password reset token hashes with expiration. |
-| **Proposed Detail** | Double-Submit CSRF Cookie | **PROPOSED** | HMAC-SHA256 signature using `SESSION_SECRET` with dual-secret rotation. |
 | **Unresolved Dependency** | External SMTP / Resend Credentials | **PENDING** | Required for live email delivery; mock adapter used in development. |
 | **Launch Prerequisite** | Distributed Redis Rate Limiter | **PREREQUISITE** | Must be deployed in Phase 10D before opening multi-instance public SaaS traffic. |
 | **Launch Prerequisite** | External WORM Audit Export | **PREREQUISITE** | Required for enterprise compliance export before public GA. |
