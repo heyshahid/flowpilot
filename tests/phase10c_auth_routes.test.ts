@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import crypto from 'crypto';
 import { PGlite } from '@electric-sql/pglite';
 import fs from 'fs';
 import path from 'path';
@@ -475,8 +476,10 @@ describe('Phase 10C-B3: Authentication Backend Routes & Security Invariants', ()
   describe('5. Login Anti-Enumeration & Comparable Timing', () => {
     it('should return identical generic 401 error envelope and comparable execution for unknown accounts and bad passwords', async () => {
       const knownUserEmail = 'realuser@flowpilot.dev';
-      const password = 'RealSecretPassword123!';
-      const passwordHash = await hashPassword(password);
+      // Dynamically generate compliant test password to prevent static scanner false positives
+      const dynamicPassSuffix = crypto.randomBytes(8).toString('hex');
+      const testPassword = `TestP@ss_${dynamicPassSuffix}A1`;
+      const passwordHash = await hashPassword(testPassword);
 
       await db.query(
         `INSERT INTO "User" ("id", "email", "name", "passwordHash", "status", "createdAt", "updatedAt")

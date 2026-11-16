@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import crypto from 'crypto';
 import {
   hashPassword,
   verifyPassword,
@@ -654,11 +655,12 @@ describe('Phase 10C-B1: Security Foundation', () => {
     });
 
     it('should reject non-session FLOWPILOT_AUTH_MODE in production', () => {
+      const dynamicHexSecret = crypto.randomBytes(32).toString('hex');
       expect(() => {
         validateSecurityConfig({
           NODE_ENV: 'production',
           FLOWPILOT_AUTH_MODE: 'mock',
-          SESSION_SECRET: 'c8f7a6b5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a32',
+          SESSION_SECRET: dynamicHexSecret,
           ALLOWED_ORIGINS: 'https://app.flowpilot.dev',
         });
       }).toThrow('FLOWPILOT_AUTH_MODE must be "session" in production');
@@ -666,7 +668,7 @@ describe('Phase 10C-B1: Security Foundation', () => {
 
     it('should accept properly generated cryptographic secrets in production', () => {
       // 1. 64-character hex secret (32 bytes / 256 bits)
-      const validHexSecret = 'c8f7a6b5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a32';
+      const validHexSecret = crypto.randomBytes(32).toString('hex');
       const config = validateSecurityConfig({
         NODE_ENV: 'production',
         FLOWPILOT_AUTH_MODE: 'session',
@@ -680,7 +682,7 @@ describe('Phase 10C-B1: Security Foundation', () => {
       expect(config.allowedOrigins).toEqual(['https://app.flowpilot.dev']);
 
       // 2. 43-character base64url secret (32 bytes / 258 bits)
-      const validBase64Secret = 'v_K8w9x_Z2m1N4p7Q3r5S6t8U0w2Y4a6C8e0G2i4K6m';
+      const validBase64Secret = crypto.randomBytes(32).toString('base64url');
       const configBase64 = validateSecurityConfig({
         NODE_ENV: 'production',
         FLOWPILOT_AUTH_MODE: 'session',
