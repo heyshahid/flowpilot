@@ -219,3 +219,11 @@ export async function verifyDummyPassword(password: string): Promise<boolean> {
   await verifyPassword(DUMMY_PASSWORD_HASH, password);
   return false;
 }
+
+/**
+ * Checks if an existing password hash needs to be upgraded to modern Argon2id parameters.
+ */
+export function needsRehash(hash: string): boolean {
+  if (!hash || typeof hash !== 'string') return true;
+  return !hash.startsWith('$argon2id$v=19$m=65536,t=3,p=4$');
+}

@@ -4,3 +4,4 @@ export * from './executionRepository';
 export * from './userWorkspaceRepository';
 export * from './sessionRepository';
 export * from './authTokenRepository';
+export * from './userRepository';

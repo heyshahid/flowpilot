@@ -324,3 +324,6 @@ export function validateCsrfRequest(params: CsrfValidationParams): CsrfValidatio
     shouldRenew: needsRenewal,
   };
 }
+
+// Aliases for compatibility
+export { mintCsrfToken as generateCsrfToken, validateCsrfRequest as validateCsrfProtection };

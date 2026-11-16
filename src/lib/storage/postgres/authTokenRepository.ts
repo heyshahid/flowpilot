@@ -139,6 +139,21 @@ export class AuthTokenRepository {
   }
 
   /**
+   * Revokes all active, unused tokens of a given type for a user.
+   */
+  public async revokeUserTokens(userId: string, type: AuthTokenType): Promise<number> {
+    if (!userId) return 0;
+    const result = await this.client.authToken.deleteMany({
+      where: {
+        userId,
+        type,
+        usedAt: null,
+      },
+    });
+    return result.count;
+  }
+
+  /**
    * Prunes expired or used tokens older than 7 days.
    */
   public async cleanupStaleTokens(now = new Date()): Promise<number> {

@@ -251,6 +251,25 @@ export class RateLimiterService {
   }
 
   /**
+   * Returns the underlying rate limiter backend.
+   */
+  public getBackend(): DistributedRateLimiter {
+    return this.backend;
+  }
+
+  /**
+   * General rate limiting check.
+   */
+  public async checkGeneralLimit(
+    key: string,
+    windowSeconds: number,
+    maxAttempts: number,
+    now = Date.now()
+  ): Promise<RateLimitResult> {
+    return this.backend.consume({ key, windowSeconds, maxAttempts }, now);
+  }
+
+  /**
    * Register a security alert listener (decoupled B1 interface, connected to B3 email adapter).
    */
   public onSecurityAlert(callback: SecurityAlertCallback): void {
