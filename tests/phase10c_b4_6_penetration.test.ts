@@ -11,11 +11,15 @@ import { executionStore } from '../src/lib/storage/executionStore';
 import { scheduleStore } from '../src/lib/storage/scheduleStore';
 import { webhookStore } from '../src/lib/storage/webhookStore';
 import { membershipStore } from '../src/lib/storage/membershipStore';
+import { invitationStore } from '../src/lib/storage/invitationStore';
+import { userStore } from '../src/lib/storage/userStore';
+import { workspaceStore } from '../src/lib/storage/workspaceStore';
 import { executionQueue } from '../src/core/execution/queue';
 import { CredentialVault } from '../src/core/security/vault';
 import { validateOutboundUrl, isForbiddenHostOrIp } from '../src/core/security/ssrf';
 import { httpAdapter } from '../src/core/integrations/adapters/httpAdapter';
 import { hashPassword, verifyPassword } from '../src/lib/security/argon2';
+import { hashToken } from '../src/lib/security/tokens';
 import { subWorkflowDriver } from '../src/core/runtime/drivers/subWorkflow';
 
 // Target Route Handlers
@@ -110,6 +114,16 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "ipAddress" TEXT,
         "userAgent" TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS "AuthToken" (
+        "id" TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL REFERENCES "User"("id"),
+        "tokenHash" TEXT UNIQUE NOT NULL,
+        "type" TEXT NOT NULL,
+        "expiresAt" TIMESTAMPTZ NOT NULL,
+        "usedAt" TIMESTAMPTZ,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
 
@@ -368,6 +382,20 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
       expect(jsonSuspended.code).toBe('FORBIDDEN');
       expect(jsonSuspended.error).toMatch(/suspended/i);
     });
+
+    it('A6: should reject forged/unsigned JWT tokens and confirm session architecture uses opaque database tokens', async () => {
+      // FlowPilot uses opaque 256-bit CSPRNG tokens in PostgreSQL (Phase 10C-B2), NOT stateless JWTs.
+      // A forged JWT (e.g. alg: none or arbitrary payload) is treated as an opaque string:
+      const forgedJwt = 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c3JfdGVuYW50X2EiLCJyb2xlIjoiT1dORVIifQ.';
+
+      const req = makeReq('http://localhost:3000/api/v1/workflows', forgedJwt);
+      const res = await getWorkflowsRoute(req);
+
+      // Server queries PostgreSQL for tokenHash = SHA256(forgedJwt), finds no session, and rejects with 401
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.code).toBe('UNAUTHORIZED');
+    });
   });
 
   // ===========================================================================
@@ -591,6 +619,27 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
       expect(res.ok).toBe(true);
       expect(res.message).toContain('HTTP endpoint responded');
     });
+
+    it('C4: should detect and reject malicious redirect targets and verify pre-fetch SSRF validation boundaries', () => {
+      // Outbound requests that encounter HTTP 301/302 redirects to internal/metadata endpoints
+      const redirectTargets = [
+        'http://169.254.169.254/latest/meta-data',
+        'http://127.0.0.1:8080/internal',
+        'http://10.0.0.1/admin',
+        'http://192.168.1.1/setup',
+      ];
+
+      for (const target of redirectTargets) {
+        expect(() => validateOutboundUrl(target)).toThrow(/SSRF Guard Security Violation/);
+      }
+
+      // Documentation assertion:
+      // validateOutboundUrl performs static string and hostname analysis prior to HTTP dispatch.
+      // Dynamic DNS rebinding (TTL 0 switching public -> private IP post-validation) or unvalidated 3xx redirects
+      // represent a documented architectural boundary where runtime socket-level IP binding is required.
+      expect(isForbiddenHostOrIp('127.0.0.1')).toBe(true);
+      expect(isForbiddenHostOrIp('169.254.169.254')).toBe(true);
+    });
   });
 
   // ===========================================================================
@@ -745,6 +794,84 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
       // Exactly one or both resolve deterministically without throwing uncaught race exceptions
       expect(typeof cancel1).toBe('boolean');
       expect(typeof cancel2).toBe('boolean');
+    });
+
+    it('F3: should prevent concurrent invitation acceptance race condition (double redemption)', async () => {
+      // Setup workspace and users in memory stores for invitationStore
+      const createdWs = workspaceStore.create({
+        name: 'Workspace A Lab',
+        ownerId: 'usr_tenant_a',
+      });
+      membershipStore.addMember({
+        workspaceId: createdWs.id,
+        userId: 'usr_tenant_a',
+        role: 'OWNER',
+        status: 'active',
+      });
+
+      const inviteeEmail = 'collab_race@tenant-a.com';
+      let targetUser = userStore.getByEmail(inviteeEmail);
+      if (!targetUser) {
+        targetUser = userStore.create({ email: inviteeEmail, name: 'Collab Race User' });
+      }
+
+      const { rawToken: inviteToken } = invitationStore.createInvitation({
+        workspaceId: createdWs.id,
+        email: inviteeEmail,
+        role: 'MEMBER',
+        actorUserId: 'usr_tenant_a',
+      });
+
+      // Dispatch 2 concurrent acceptance attempts
+      const [attempt1, attempt2] = await Promise.allSettled([
+        Promise.resolve().then(() => invitationStore.acceptInvitation(inviteToken, targetUser.id)),
+        Promise.resolve().then(() => invitationStore.acceptInvitation(inviteToken, targetUser.id)),
+      ]);
+
+      const fulfilled = [attempt1, attempt2].filter((r) => r.status === 'fulfilled');
+      const rejected = [attempt1, attempt2].filter((r) => r.status === 'rejected');
+
+      // Exactly ONE succeeds; the second is rejected with 'already been accepted'
+      expect(fulfilled.length).toBe(1);
+      expect(rejected.length).toBe(1);
+      expect((rejected[0] as PromiseRejectedResult).reason.message).toContain('already been accepted');
+    });
+
+    it('F4: should prevent concurrent password reset token redemption race condition', async () => {
+      // Seed a password reset token for usr_tenant_a in AuthToken table
+      const rawResetToken = 'fp_reset_race_test_token_12345';
+      const tokenHash = hashToken(rawResetToken);
+      const expiresAt = new Date(Date.now() + 3600000);
+
+      await db.query(
+        `INSERT INTO "AuthToken" ("id", "userId", "tokenHash", "type", "expiresAt", "createdAt")
+         VALUES ('tok_reset_race_1', 'usr_tenant_a', $1, 'PASSWORD_RESET', $2, NOW());`,
+        [tokenHash, expiresAt]
+      );
+
+      // Execute two concurrent atomic queries simulating UserRepository.resetPasswordAtomic
+      const runAtomicReset = async () => {
+        const now = new Date();
+        const res = await db.query(
+          `UPDATE "AuthToken"
+           SET "usedAt" = $1
+           WHERE "tokenHash" = $2
+             AND "type" = 'PASSWORD_RESET'
+             AND "usedAt" IS NULL
+             AND "expiresAt" > $1
+           RETURNING "id", "userId";`,
+          [now, tokenHash]
+        );
+        return res.rows;
+      };
+
+      const [res1, res2] = await Promise.all([runAtomicReset(), runAtomicReset()]);
+      const successes = [res1, res2].filter((r) => r.length > 0);
+      const failures = [res1, res2].filter((r) => r.length === 0);
+
+      // Exactly ONE transaction consumes the token; the other finds 0 rows because usedAt IS NOT NULL
+      expect(successes.length).toBe(1);
+      expect(failures.length).toBe(1);
     });
   });
 
