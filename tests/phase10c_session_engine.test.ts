@@ -40,6 +40,7 @@ import {
   MAX_SESSION_LIFETIME_MS,
   IDLE_TIMEOUT_MS,
   THROTTLE_TOUCH_MS,
+  SessionRepository,
 } from '../src/lib/storage/postgres/sessionRepository';
 
 describe('Phase 10C-B2: Database & Session Engine', () => {
@@ -128,6 +129,31 @@ describe('Phase 10C-B2: Database & Session Engine', () => {
       expect(columns).toContain('expiresAt');
       expect(columns).toContain('createdAt');
       expect(columns).toContain('usedAt');
+    });
+
+    it('should verify AuthToken migration creates unique tokenHash index and no redundant duplicate non-unique index', async () => {
+      const authTokenSqlPath = path.join(
+        process.cwd(),
+        'prisma/migrations/20261116110000_add_auth_tokens/migration.sql'
+      );
+      const sqlContent = fs.readFileSync(authTokenSqlPath, 'utf8');
+
+      // Unique constraint / index MUST be present
+      expect(sqlContent).toContain('CREATE UNIQUE INDEX "AuthToken_tokenHash_key" ON "AuthToken"("tokenHash");');
+      // Composite index for userId and type queries MUST be present
+      expect(sqlContent).toContain('CREATE INDEX "AuthToken_userId_type_idx" ON "AuthToken"("userId", "type");');
+      // Redundant duplicate non-unique index MUST NOT be present
+      expect(sqlContent).not.toContain('CREATE INDEX "AuthToken_tokenHash_idx"');
+
+      // Check PostgreSQL indices on AuthToken table in PGlite
+      const indexRes = await db.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'AuthToken';`
+      );
+      const indexNames = indexRes.rows.map((r: any) => r.indexname);
+      expect(indexNames).toContain('AuthToken_pkey');
+      expect(indexNames).toContain('AuthToken_tokenHash_key');
+      expect(indexNames).toContain('AuthToken_userId_type_idx');
+      expect(indexNames).not.toContain('AuthToken_tokenHash_idx');
     });
   });
 
@@ -440,6 +466,217 @@ describe('Phase 10C-B2: Database & Session Engine', () => {
       const afterCheck = await db.query(`SELECT * FROM "Session" WHERE "userId" = $1;`, [userMulti]);
       expect(afterCheck.rows.length).toBe(0);
     });
+
+    it('should guarantee concurrent session revocation is immediate and session is never resurrected', async () => {
+      const now = new Date();
+      const rawToken = generateSecureToken(32);
+      const tokenHash = hashToken(rawToken);
+      const sessionId = 'sess_concurrent_rev';
+
+      await db.query(
+        `INSERT INTO "Session" ("id", "userId", "tokenHash", "expiresAt", "createdAt", "lastActiveAt")
+         VALUES ($1, 'usr_test_b2', $2, $3, $4, $5);`,
+        [sessionId, tokenHash, new Date(now.getTime() + MAX_SESSION_LIFETIME_MS), now, now]
+      );
+
+      // Verify session exists prior to revocation
+      const preCheck = await db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [tokenHash]);
+      expect(preCheck.rows.length).toBe(1);
+
+      // Execute revocation concurrently with multiple validation queries
+      const [revokeResult, ...validateResults] = await Promise.all([
+        db.query(`DELETE FROM "Session" WHERE "tokenHash" = $1 RETURNING *;`, [tokenHash]),
+        db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [tokenHash]),
+        db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [tokenHash]),
+        db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [tokenHash]),
+      ]);
+
+      expect(revokeResult.rows.length).toBe(1);
+
+      // All subsequent validations must strictly receive 0 rows
+      const postChecks = await Promise.all(
+        Array(5)
+          .fill(null)
+          .map(() => db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [tokenHash]))
+      );
+      for (const res of postChecks) {
+        expect(res.rows.length).toBe(0);
+      }
+
+      // Concurrency defense: Attempting to touch / update lastActiveAt must update 0 rows and cannot resurrect
+      const staleThreshold = new Date(now.getTime() + 10000);
+      const touchRes = await db.query(
+        `UPDATE "Session" SET "lastActiveAt" = $1 WHERE "id" = $2 AND "lastActiveAt" < $3 RETURNING *;`,
+        [now, sessionId, staleThreshold]
+      );
+      expect(touchRes.rows.length).toBe(0);
+
+      // Final check: table count for this session remains strictly 0
+      const finalCheck = await db.query(`SELECT COUNT(*) as count FROM "Session" WHERE "id" = $1;`, [
+        sessionId,
+      ]);
+      expect(Number((finalCheck.rows[0] as any).count)).toBe(0);
+    });
+
+    it('should strictly isolate multi-user session revocation (revoking user A never affects user B)', async () => {
+      const now = new Date();
+      const userAlpha = 'usr_iso_alpha';
+      const userBeta = 'usr_iso_beta';
+
+      // Insert both test users
+      await db.query(
+        `INSERT INTO "User" ("id", "email", "name", "status", "createdAt", "updatedAt")
+         VALUES ($1, 'alpha@flowpilot.dev', 'Alpha User', 'ACTIVE', NOW(), NOW()),
+                ($2, 'beta@flowpilot.dev', 'Beta User', 'ACTIVE', NOW(), NOW());`,
+        [userAlpha, userBeta]
+      );
+
+      const alphaTokens: string[] = [];
+      const betaTokens: string[] = [];
+
+      // Create 2 sessions for User Alpha
+      for (let i = 1; i <= 2; i++) {
+        const raw = generateSecureToken(32);
+        alphaTokens.push(raw);
+        await db.query(
+          `INSERT INTO "Session" ("id", "userId", "tokenHash", "userAgent", "expiresAt", "createdAt", "lastActiveAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+          [
+            `sess_alpha_${i}`,
+            userAlpha,
+            hashToken(raw),
+            `Alpha Device ${i}`,
+            new Date(now.getTime() + MAX_SESSION_LIFETIME_MS),
+            now,
+            now,
+          ]
+        );
+      }
+
+      // Create 2 sessions for User Beta
+      for (let i = 1; i <= 2; i++) {
+        const raw = generateSecureToken(32);
+        betaTokens.push(raw);
+        await db.query(
+          `INSERT INTO "Session" ("id", "userId", "tokenHash", "userAgent", "expiresAt", "createdAt", "lastActiveAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+          [
+            `sess_beta_${i}`,
+            userBeta,
+            hashToken(raw),
+            `Beta Device ${i}`,
+            new Date(now.getTime() + MAX_SESSION_LIFETIME_MS),
+            now,
+            now,
+          ]
+        );
+      }
+
+      // Verify baseline: 2 sessions each
+      const alphaBefore = await db.query(`SELECT * FROM "Session" WHERE "userId" = $1;`, [userAlpha]);
+      expect(alphaBefore.rows.length).toBe(2);
+      const betaBefore = await db.query(`SELECT * FROM "Session" WHERE "userId" = $1;`, [userBeta]);
+      expect(betaBefore.rows.length).toBe(2);
+
+      // Target revocation: Revoke ALL sessions belonging to User Alpha ONLY
+      const deleteResult = await db.query(`DELETE FROM "Session" WHERE "userId" = $1;`, [userAlpha]);
+      expect(deleteResult.rowCount).toBe(2);
+
+      // User Alpha sessions must now be 0
+      const alphaAfter = await db.query(`SELECT * FROM "Session" WHERE "userId" = $1;`, [userAlpha]);
+      expect(alphaAfter.rows.length).toBe(0);
+
+      // User Beta sessions must remain completely untouched (still 2)
+      const betaAfter = await db.query(`SELECT * FROM "Session" WHERE "userId" = $1;`, [userBeta]);
+      expect(betaAfter.rows.length).toBe(2);
+
+      // Validating Alpha tokens must fail
+      for (const t of alphaTokens) {
+        const res = await db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [hashToken(t)]);
+        expect(res.rows.length).toBe(0);
+      }
+
+      // Validating Beta tokens must succeed
+      for (const t of betaTokens) {
+        const res = await db.query(`SELECT * FROM "Session" WHERE "tokenHash" = $1;`, [hashToken(t)]);
+        expect(res.rows.length).toBe(1);
+        expect((res.rows[0] as any).userId).toBe(userBeta);
+      }
+    });
+
+    it('should verify SessionRepository.validateSession and revokeSession under concurrent calls without resurrection', async () => {
+      const mockSessions: any[] = [];
+      const testUser = { id: 'usr_repo_test', email: 'test@flowpilot.dev', name: 'Tester' };
+      const rawToken = generateSecureToken(32);
+      const tokenHash = hashToken(rawToken);
+      const now = new Date();
+
+      mockSessions.push({
+        id: 'sess_repo_race',
+        userId: testUser.id,
+        tokenHash,
+        userAgent: 'TestBrowser',
+        ipAddress: '127.0.0.1',
+        expiresAt: new Date(now.getTime() + MAX_SESSION_LIFETIME_MS),
+        createdAt: now,
+        lastActiveAt: now,
+        user: testUser,
+      });
+
+      const mockPrisma = {
+        session: {
+          findUnique: async ({ where }: any) => {
+            const found = mockSessions.find((s) => s.tokenHash === where.tokenHash || s.id === where.id);
+            return found ? { ...found } : null;
+          },
+          deleteMany: async ({ where }: any) => {
+            let count = 0;
+            for (let i = mockSessions.length - 1; i >= 0; i--) {
+              if (where.tokenHash && mockSessions[i].tokenHash === where.tokenHash) {
+                mockSessions.splice(i, 1);
+                count++;
+              }
+            }
+            return { count };
+          },
+          delete: async ({ where }: any) => {
+            const idx = mockSessions.findIndex((s) => s.id === where.id);
+            if (idx === -1) throw new Error('Not found');
+            return mockSessions.splice(idx, 1)[0];
+          },
+          updateMany: async ({ where, data }: any) => {
+            let count = 0;
+            for (const s of mockSessions) {
+              if (s.id === where.id) {
+                Object.assign(s, data);
+                count++;
+              }
+            }
+            return { count };
+          },
+        },
+      };
+
+      const repo = new SessionRepository(mockPrisma as any);
+
+      // Validate before revocation
+      const validBefore = await repo.validateSession(rawToken, now);
+      expect(validBefore.valid).toBe(true);
+      expect(validBefore.user?.id).toBe(testUser.id);
+
+      // Concurrently launch revocation and validation
+      const [revoked, validDuring] = await Promise.all([
+        repo.revokeSession(rawToken),
+        repo.validateSession(rawToken, now),
+      ]);
+      expect(revoked).toBe(true);
+
+      // Subsequent validations fail consistently
+      const validAfter = await repo.validateSession(rawToken, now);
+      expect(validAfter.valid).toBe(false);
+      expect(validAfter.reason).toBe('SESSION_NOT_FOUND');
+      expect(mockSessions.length).toBe(0);
+    });
   });
 
   describe('8. Session Rotation', () => {
@@ -510,18 +747,40 @@ describe('Phase 10C-B2: Database & Session Engine', () => {
       expect(clearProd).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
     });
 
-    it('should build and clear CSRF cookies with 24-hour lifetime and readable access', () => {
-      const csrfToken = 'sample_csrf_signed_token';
-      const csrfCookie = buildCsrfCookie(csrfToken, { isProduction: true });
+    it('should build production CSRF cookie with Secure, SameSite=Lax, Path=/, and omit HttpOnly for JS double-submit', () => {
+      const csrfToken = 'sample_csrf_signed_prod_token';
+      const cookieHeader = buildCsrfCookie(csrfToken, { isProduction: true });
 
-      expect(csrfCookie).toContain(`${CSRF_COOKIE_NAME}=${csrfToken}`);
-      expect(csrfCookie).toContain('Path=/');
-      expect(csrfCookie).toContain('SameSite=Lax');
-      expect(csrfCookie).toContain('Max-Age=86400');
-      expect(csrfCookie).not.toContain('HttpOnly'); // Must be readable by client JS
+      expect(cookieHeader).toContain(`${CSRF_COOKIE_NAME}=${csrfToken}`);
+      expect(cookieHeader).toContain('Path=/');
+      expect(cookieHeader).toContain('SameSite=Lax');
+      expect(cookieHeader).toContain('Secure'); // Must have Secure flag in production HTTPS
+      expect(cookieHeader).toContain('Max-Age=86400');
+      expect(cookieHeader).not.toContain('HttpOnly'); // MUST omit HttpOnly so client JS can read and send in x-csrf-token
+    });
 
-      const clearCsrf = buildClearCsrfCookie({ isProduction: true });
-      expect(clearCsrf).toContain('Max-Age=0');
+    it('should build development CSRF cookie without Secure and omit HttpOnly for localhost HTTP development', () => {
+      const csrfToken = 'sample_csrf_signed_dev_token';
+      const cookieHeader = buildCsrfCookie(csrfToken, { isProduction: false });
+
+      expect(cookieHeader).toContain(`${CSRF_COOKIE_NAME}=${csrfToken}`);
+      expect(cookieHeader).toContain('Path=/');
+      expect(cookieHeader).toContain('SameSite=Lax');
+      expect(cookieHeader).toContain('Max-Age=86400');
+      expect(cookieHeader).not.toContain('Secure'); // Must omit Secure on HTTP localhost
+      expect(cookieHeader).not.toContain('HttpOnly'); // Readable by client JS
+    });
+
+    it('should build clear CSRF cookies with Max-Age=0 in production and development', () => {
+      const clearProd = buildClearCsrfCookie({ isProduction: true });
+      expect(clearProd).toContain(`${CSRF_COOKIE_NAME}=`);
+      expect(clearProd).toContain('Max-Age=0');
+      expect(clearProd).toContain('Secure');
+
+      const clearDev = buildClearCsrfCookie({ isProduction: false });
+      expect(clearDev).toContain(`${CSRF_COOKIE_NAME}=`);
+      expect(clearDev).toContain('Max-Age=0');
+      expect(clearDev).not.toContain('Secure');
     });
 
     it('should extract session token correctly from production or development Cookie headers', () => {

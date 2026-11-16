@@ -179,3 +179,4 @@ export function extractCsrfToken(cookieHeader: string | null | undefined): strin
   const cookies = parseCookies(cookieHeader);
   return cookies[CSRF_COOKIE_NAME] || null;
 }
+

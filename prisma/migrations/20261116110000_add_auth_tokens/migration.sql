@@ -18,10 +18,8 @@ CREATE TABLE "AuthToken" (
 CREATE UNIQUE INDEX "AuthToken_tokenHash_key" ON "AuthToken"("tokenHash");
 
 -- CreateIndex
-CREATE INDEX "AuthToken_tokenHash_idx" ON "AuthToken"("tokenHash");
-
--- CreateIndex
 CREATE INDEX "AuthToken_userId_type_idx" ON "AuthToken"("userId", "type");
 
 -- AddForeignKey
 ALTER TABLE "AuthToken" ADD CONSTRAINT "AuthToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
