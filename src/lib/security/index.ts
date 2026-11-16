@@ -8,3 +8,4 @@ export * from './tokens';
 export * from './argon2';
 export * from './csrf';
 export * from './rateLimiter';
+export * from './cookies';

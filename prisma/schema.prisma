@@ -25,6 +25,11 @@ enum AccountStatus {
   PENDING_VERIFICATION
 }
 
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 model User {
   id              String        @id @default(cuid())
   email           String        @unique
@@ -41,6 +46,7 @@ model User {
   accounts        Account[]
   invitationsSent Invitation[]  @relation("InvitedByUser")
   auditLogs       AuditLog[]
+  authTokens      AuthToken[]
 
   @@index([email])
 }
@@ -59,6 +65,21 @@ model Session {
 
   @@index([tokenHash])
   @@index([userId])
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  tokenHash String        @unique
+  type      AuthTokenType
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+  usedAt    DateTime?
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId, type])
 }
 
 model Account {
