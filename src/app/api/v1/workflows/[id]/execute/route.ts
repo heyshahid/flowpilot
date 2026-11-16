@@ -50,7 +50,7 @@ export async function POST(
     }
 
     // Enqueue background execution job with tenant attribution
-    const execution = await executionQueue.enqueue(id, payload);
+    const execution = await executionQueue.enqueue(id, payload, { workspaceId: authCtx.workspace.id });
     if (execution && !execution.workspaceId) {
       execution.workspaceId = authCtx.workspace.id;
     }

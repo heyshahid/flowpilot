@@ -1,7 +1,7 @@
 import { NodeDriver } from '../types';
 import { credentialStore } from '../../../lib/storage/credentialStore';
 
-export const sendEmailDriver: NodeDriver = async (_context, resolvedConfig) => {
+export const sendEmailDriver: NodeDriver = async (context, resolvedConfig) => {
   const to = String(resolvedConfig.to || '').trim();
   const subject = String(resolvedConfig.subject || '').trim();
   const content = String(resolvedConfig.content || resolvedConfig.body || '').trim();
@@ -23,7 +23,9 @@ export const sendEmailDriver: NodeDriver = async (_context, resolvedConfig) => {
   let from = resolvedConfig.from || 'no-reply@flowpilot.dev';
 
   if (resolvedConfig.credentialId) {
-    const cred = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+    const cred = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId), {
+      workspaceId: (context as any).workspaceId,
+    });
     if (cred) {
       if (cred.host) provider = `smtp://${cred.host}:${cred.port || 587}`;
       if (cred.senderEmail) from = cred.senderEmail;

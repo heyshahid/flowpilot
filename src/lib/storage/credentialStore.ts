@@ -23,6 +23,7 @@ const DATA_FILE = path.join(DATA_DIR, 'credentials.json');
 export const SEED_CREDENTIALS: CredentialRecord[] = [
   {
     id: 'cred_sample_smtp',
+    workspaceId: 'ws_default',
     name: 'Transactional SMTP Relay (SendGrid)',
     integrationId: 'smtp',
     type: 'smtp',
@@ -49,6 +50,7 @@ export const SEED_CREDENTIALS: CredentialRecord[] = [
   },
   {
     id: 'cred_sample_slack',
+    workspaceId: 'ws_default',
     name: 'FlowPilot Alerts Slack Bot',
     integrationId: 'slack',
     type: 'bearer_token',
@@ -67,6 +69,7 @@ export const SEED_CREDENTIALS: CredentialRecord[] = [
   },
   {
     id: 'cred_sample_telegram',
+    workspaceId: 'ws_default',
     name: 'Ops Telegram Bot Dispatcher',
     integrationId: 'telegram',
     type: 'api_key',
@@ -136,6 +139,10 @@ export class CredentialStore {
     workspaceId?: string;
     createdBy?: string;
   }): Promise<CredentialRecord> {
+    if (params.workspaceId !== undefined && (!params.workspaceId || typeof params.workspaceId !== 'string' || params.workspaceId.trim() === '')) {
+      throw new Error('Workspace identity cannot be empty when persisting credentials.');
+    }
+
     const id = `cred_${Math.random().toString(36).substring(2, 10)}`;
     const now = new Date().toISOString();
 
@@ -178,7 +185,7 @@ export class CredentialStore {
 
   public async getById(id: string, workspaceId?: string): Promise<CredentialRecord | null> {
     const cred = this.inMemoryCredentials.get(id) || null;
-    if (cred && workspaceId && (cred.workspaceId || 'ws_default') !== workspaceId) {
+    if (cred && workspaceId && cred.workspaceId !== workspaceId) {
       return null;
     }
     return cred;
@@ -190,15 +197,21 @@ export class CredentialStore {
   ): Promise<T | null> {
     const record = await this.getById(id, options?.workspaceId);
     if (!record) return null;
+    if (options?.workspaceId && record.workspaceId && record.workspaceId !== options.workspaceId) {
+      return null;
+    }
     if (options?.allowDecrypt === false) {
       throw new Error(`Unauthorized: Role lacks permission to decrypt credential secrets.`);
     }
     return CredentialVault.decrypt<T>(record.encryptedData);
   }
 
-  public async updateStatus(id: string, status: 'valid' | 'invalid'): Promise<void> {
+  public async updateStatus(id: string, status: 'valid' | 'invalid', workspaceId?: string): Promise<void> {
     const record = this.inMemoryCredentials.get(id);
     if (record) {
+      if (workspaceId && record.workspaceId && record.workspaceId !== workspaceId) {
+        throw new Error(`Cross-workspace credential update denied: Credential belongs to "${record.workspaceId}".`);
+      }
       record.status = status;
       record.lastVerifiedAt = new Date().toISOString();
       record.updatedAt = new Date().toISOString();
@@ -209,7 +222,7 @@ export class CredentialStore {
   public listSync(filter?: { integrationId?: string; workspaceId?: string }): CredentialRecord[] {
     let list = Array.from(this.inMemoryCredentials.values());
     if (filter?.workspaceId) {
-      list = list.filter((c) => (c.workspaceId || 'ws_default') === filter.workspaceId);
+      list = list.filter((c) => c.workspaceId === filter.workspaceId);
     }
     if (filter?.integrationId) {
       list = list.filter((c) => c.integrationId === filter.integrationId);
@@ -222,9 +235,12 @@ export class CredentialStore {
   }
 
   public async delete(id: string, workspaceId?: string): Promise<boolean> {
+    if (workspaceId !== undefined && (!workspaceId || typeof workspaceId !== 'string' || workspaceId.trim() === '')) {
+      throw new Error('Workspace identity is required for credential deletion.');
+    }
     if (workspaceId) {
       const existing = this.inMemoryCredentials.get(id);
-      if (existing && (existing.workspaceId || 'ws_default') !== workspaceId) {
+      if (existing && existing.workspaceId && existing.workspaceId !== workspaceId) {
         throw new Error(`Cross-workspace delete denied: Credential belongs to "${existing.workspaceId}".`);
       }
     }

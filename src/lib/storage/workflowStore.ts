@@ -266,7 +266,7 @@ class WorkflowStore {
   public getById(id: string, workspaceId?: string): WorkflowRecord | null {
     const list = this.getAll();
     const wf = list.find((w) => w.id === id) || null;
-    if (wf && workspaceId && (wf.workspaceId || 'ws_default') !== workspaceId) {
+    if (wf && workspaceId && wf.workspaceId !== workspaceId) {
       return null;
     }
     return wf;
@@ -284,10 +284,15 @@ class WorkflowStore {
     const index = list.findIndex((w) => w.id === workflow.id);
     const existing = index >= 0 ? list[index] : null;
 
+    const targetWorkspaceId = options?.workspaceId || workflow.workspaceId || existing?.workspaceId;
+    if (!targetWorkspaceId || typeof targetWorkspaceId !== 'string' || targetWorkspaceId.trim() === '') {
+      throw new Error('Workspace identity is required for workflow persistence.');
+    }
+
     // Check workspace isolation if provided
     if (options?.workspaceId && existing) {
-      const existingWs = existing.workspaceId || 'ws_default';
-      if (existingWs !== options.workspaceId) {
+      const existingWs = existing.workspaceId;
+      if (existingWs && existingWs !== options.workspaceId) {
         throw new Error(`Cross-workspace access denied: Workflow "${workflow.id}" belongs to "${existingWs}".`);
       }
     }
@@ -306,7 +311,7 @@ class WorkflowStore {
 
     const updated: WorkflowRecord = {
       ...workflow,
-      workspaceId: workflow.workspaceId || existing?.workspaceId || options?.workspaceId || 'ws_default',
+      workspaceId: targetWorkspaceId,
       version: nextVersion,
       createdBy: workflow.createdBy || existing?.createdBy || options?.actor?.id || 'usr_owner',
       createdByName: workflow.createdByName || existing?.createdByName || options?.actor?.name || 'Shahid Akram',
@@ -381,13 +386,18 @@ class WorkflowStore {
     const original = this.getById(id, options?.workspaceId);
     if (!original) return null;
 
+    if (options?.workspaceId && original.workspaceId && original.workspaceId !== options.workspaceId) {
+      throw new Error(`Cross-workspace duplicate denied: Workflow belongs to "${original.workspaceId}".`);
+    }
+
     const copyId = `wf_${Math.random().toString(36).substring(2, 9)}`;
+    const targetWorkspaceId = options?.workspaceId || original.workspaceId || 'ws_default';
     const copy: WorkflowRecord = {
       ...original,
       id: copyId,
       name: `${original.name} (Copy)`,
       status: 'draft',
-      workspaceId: options?.workspaceId || original.workspaceId || 'ws_default',
+      workspaceId: targetWorkspaceId,
       version: 1,
       createdBy: options?.actor?.id || 'usr_owner',
       createdByName: options?.actor?.name || 'Shahid Akram',
@@ -421,10 +431,13 @@ class WorkflowStore {
     original.createdByName = newOwnerName;
     original.updatedAt = new Date().toISOString();
 
-    return this.save(original);
+    return this.save(original, { workspaceId: original.workspaceId });
   }
 
   public update(id: string, updates: Partial<WorkflowRecord>, workspaceId?: string): WorkflowRecord | null {
+    if (!workspaceId || typeof workspaceId !== 'string' || workspaceId.trim() === '') {
+      throw new Error('Workspace identity is required for workflow updates.');
+    }
     const original = this.getById(id, workspaceId);
     if (!original) return null;
 
@@ -439,9 +452,13 @@ class WorkflowStore {
     return this.save(updated, { workspaceId: original.workspaceId });
   }
 
-  public rename(id: string, newName: string): WorkflowRecord | null {
-    const original = this.getById(id);
+  public rename(id: string, newName: string, workspaceId?: string): WorkflowRecord | null {
+    const original = this.getById(id, workspaceId);
     if (!original) return null;
+
+    if (workspaceId && original.workspaceId && original.workspaceId !== workspaceId) {
+      throw new Error(`Cross-workspace rename denied: Workflow belongs to "${original.workspaceId}".`);
+    }
 
     const updated: WorkflowRecord = {
       ...original,
@@ -449,12 +466,16 @@ class WorkflowStore {
       updatedAt: new Date().toISOString(),
     };
 
-    return this.save(updated);
+    return this.save(updated, { workspaceId: original.workspaceId });
   }
 
-  public toggleStatus(id: string): WorkflowRecord | null {
-    const original = this.getById(id);
+  public toggleStatus(id: string, workspaceId?: string): WorkflowRecord | null {
+    const original = this.getById(id, workspaceId);
     if (!original) return null;
+
+    if (workspaceId && original.workspaceId && original.workspaceId !== workspaceId) {
+      throw new Error(`Cross-workspace toggle denied: Workflow belongs to "${original.workspaceId}".`);
+    }
 
     const nextStatus: WorkflowStatus = original.status === 'active' ? 'draft' : 'active';
     const updated: WorkflowRecord = {
@@ -463,15 +484,18 @@ class WorkflowStore {
       updatedAt: new Date().toISOString(),
     };
 
-    return this.save(updated);
+    return this.save(updated, { workspaceId: original.workspaceId });
   }
 
   public delete(id: string, workspaceId?: string): boolean {
+    if (workspaceId !== undefined && (!workspaceId || typeof workspaceId !== 'string' || workspaceId.trim() === '')) {
+      throw new Error('Workspace identity is required for workflow deletion.');
+    }
     const list = this.getAll();
     const target = list.find((w) => w.id === id);
     if (!target) return false;
 
-    if (workspaceId && (target.workspaceId || 'ws_default') !== workspaceId) {
+    if (workspaceId && target.workspaceId && target.workspaceId !== workspaceId) {
       throw new Error(`Cross-workspace delete denied: Workflow belongs to "${target.workspaceId}".`);
     }
 

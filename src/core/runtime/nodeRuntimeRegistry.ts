@@ -67,10 +67,12 @@ export class NodeRuntimeRegistry {
     this.registerDriver('action.sendNotification', sendNotificationDriver);
 
     // Phase 5: Integration Actions
-    this.registerDriver('action.googleSheets', async (_context, resolvedConfig) => {
+    this.registerDriver('action.googleSheets', async (context, resolvedConfig) => {
       let credentials = undefined;
       if (resolvedConfig.credentialId) {
-        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId), {
+          workspaceId: (context as any).workspaceId,
+        });
       }
       return googleSheetsAdapter.executeAction(
         String(resolvedConfig.action || 'readRows'),
@@ -79,18 +81,22 @@ export class NodeRuntimeRegistry {
       );
     });
 
-    this.registerDriver('action.slack', async (_context, resolvedConfig) => {
+    this.registerDriver('action.slack', async (context, resolvedConfig) => {
       let credentials = undefined;
       if (resolvedConfig.credentialId) {
-        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId), {
+          workspaceId: (context as any).workspaceId,
+        });
       }
       return slackAdapter.executeAction('sendMessage', resolvedConfig, credentials || undefined);
     });
 
-    this.registerDriver('action.telegram', async (_context, resolvedConfig) => {
+    this.registerDriver('action.telegram', async (context, resolvedConfig) => {
       let credentials = undefined;
       if (resolvedConfig.credentialId) {
-        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+        credentials = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId), {
+          workspaceId: (context as any).workspaceId,
+        });
       }
       return telegramAdapter.executeAction('sendMessage', resolvedConfig, credentials || undefined);
     });

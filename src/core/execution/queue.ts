@@ -39,9 +39,9 @@ export class ExecutionQueue {
   public async enqueue(
     workflowId: string,
     payload: Record<string, unknown> = {},
-    options: { maxRetries?: number } = {}
+    options: { maxRetries?: number; workspaceId?: string } = {}
   ): Promise<WorkflowExecutionRecord> {
-    const workflow = workflowStore.getById(workflowId);
+    const workflow = workflowStore.getById(workflowId, options.workspaceId);
     if (!workflow) {
       throw new Error(`Workflow with ID "${workflowId}" does not exist.`);
     }
@@ -53,6 +53,7 @@ export class ExecutionQueue {
       id: executionId,
       workflowId,
       workflowName: workflow.name,
+      workspaceId: workflow.workspaceId || options.workspaceId || 'ws_default',
       status: 'QUEUED',
       trigger: {
         type: workflow.nodes.find((n) => n.category === 'trigger')?.type || 'trigger.manual',

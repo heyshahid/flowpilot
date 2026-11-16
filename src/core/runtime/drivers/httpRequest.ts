@@ -31,7 +31,10 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
 
     // Attach credentials from Vault if referenced
     if (resolvedConfig.credentialId) {
-      const cred = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId));
+      const workspaceId = (context as any).workspaceId;
+      const cred = await credentialStore.getDecryptedData(String(resolvedConfig.credentialId), {
+        workspaceId,
+      });
       if (cred) {
         if (cred.token) {
           headers['Authorization'] = `Bearer ${cred.token}`;

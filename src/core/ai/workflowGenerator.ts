@@ -191,7 +191,9 @@ export class WorkflowGenerator {
 
     // 4. Verify Credentials for Required Integrations
     const requiredIntegrations = Array.from(requiredIntegrationsSet);
-    const existingCreds = credentialStore.listSync();
+    const existingCreds = credentialStore.listSync(
+      options?.workspaceId ? { workspaceId: options.workspaceId } : undefined
+    );
     const missingCredentials: string[] = [];
 
     for (const integ of requiredIntegrations) {

@@ -64,7 +64,7 @@ export class ExecutionWorker {
       }
 
       // 3. Retrieve Workflow Graph
-      const workflow = workflowStore.getById(workflowId);
+      const workflow = workflowStore.getById(workflowId, record.workspaceId);
       if (!workflow) {
         throw new Error(`Workflow with ID "${workflowId}" was not found.`);
       }
@@ -166,6 +166,7 @@ export class ExecutionWorker {
               steps: stepsContext,
               signal,
             };
+            (nodeContext as any).workspaceId = record?.workspaceId || workflow.workspaceId;
 
             try {
               // Context for expression resolution
