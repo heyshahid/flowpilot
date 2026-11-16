@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { alertIncidentStore } from '@/lib/storage/alertIncidentStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 
@@ -51,6 +52,12 @@ export async function POST(
       data: updated,
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auditLogStore, AuditResourceType } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(
   req: NextRequest,
@@ -26,9 +27,16 @@ export async function GET(
       total: logs.length,
       logs,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') || msg.includes('Cross-workspace') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }

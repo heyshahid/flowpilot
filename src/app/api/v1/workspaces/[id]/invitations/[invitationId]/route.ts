@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { invitationStore } from '@/lib/storage/invitationStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function DELETE(
   req: NextRequest,
@@ -28,10 +29,17 @@ export async function DELETE(
       success: true,
       message: `Invitation for ${revoked.email} has been revoked.`,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') ? 403 : 400;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 400 }
+    );
   }
 }
 
@@ -65,9 +73,16 @@ export async function POST(
       invitation,
       inviteUrl,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') ? 403 : 400;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 400 }
+    );
   }
 }

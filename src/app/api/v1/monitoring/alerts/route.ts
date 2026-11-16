@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
-import { RBACManager } from '@/core/auth/rbac';
+import { AuthError } from '@/core/auth/types';
 import { monitoringService } from '@/core/monitoring/monitoringService';
 
 export async function GET(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
-    RBACManager.assertPermission(authCtx.role, 'workflow:read');
+    const authCtx = await AuthContextManager.enforcePermission(req, 'alert:read');
 
     const url = new URL(req.url);
     const requestedWorkspace = url.searchParams.get('workspaceId');
@@ -28,6 +27,12 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const status = error.message?.includes('Unauthorized')
       ? 401
       : error.message?.includes('Forbidden')

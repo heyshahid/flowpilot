@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { workspaceStore } from '@/lib/storage/workspaceStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(
   req: NextRequest,
@@ -14,7 +15,7 @@ export async function GET(
     const ws = workspaceStore.getById(id);
     if (!ws) {
       return NextResponse.json(
-        { success: false, error: 'Workspace not found.' },
+        { success: false, error: 'Workspace not found.', code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -24,10 +25,17 @@ export async function GET(
       workspace: ws,
       role: authCtx.role,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Cross-workspace') || msg.includes('Forbidden') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
@@ -58,10 +66,17 @@ export async function PATCH(
       success: true,
       workspace: updated,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
@@ -90,9 +105,16 @@ export async function DELETE(
       success: true,
       message: `Workspace "${archived.name}" archived successfully.`,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }

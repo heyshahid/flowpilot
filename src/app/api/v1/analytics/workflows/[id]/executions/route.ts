@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
-import { RBACManager } from '@/core/auth/rbac';
+import { AuthError } from '@/core/auth/types';
 import { workflowStore } from '@/lib/storage/workflowStore';
 import { executionStore } from '@/lib/storage/executionStore';
 import { WorkflowExecutionStatus } from '@/core/execution/types';
@@ -10,8 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
-    RBACManager.assertPermission(authCtx.role, 'workflow:read');
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
 
     const { id } = await params;
     const workflow = workflowStore.getById(id, authCtx.workspace.id);
@@ -63,6 +62,12 @@ export async function GET(
       },
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Unauthorized')
       ? 401

@@ -3,6 +3,7 @@ import { membershipStore } from '@/lib/storage/membershipStore';
 import { userStore } from '@/lib/storage/userStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function PATCH(
   req: NextRequest,
@@ -10,8 +11,10 @@ export async function PATCH(
 ) {
   try {
     const { id, userId } = await params;
-    const authCtx = await AuthContextManager.enforceWorkspaceIsolation(req, id);
     const body = await req.json();
+
+    const requiredPermission = body.role ? 'member:update_role' : 'member:suspend';
+    const authCtx = await AuthContextManager.enforceWorkspaceIsolation(req, id, requiredPermission);
 
     const targetUser = userStore.getById(userId);
 
@@ -49,11 +52,18 @@ export async function PATCH(
       return NextResponse.json({ success: true, membership: updatedMem });
     }
 
-    return NextResponse.json({ success: false, error: 'No update parameters provided.' }, { status: 400 });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Unauthorized') || msg.includes('Forbidden') ? 403 : 400;
-    return NextResponse.json({ success: false, error: msg }, { status });
+    return NextResponse.json({ success: false, error: 'No update parameters provided.', code: 'INVALID_INPUT' }, { status: 400 });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 400 }
+    );
   }
 }
 
@@ -84,9 +94,16 @@ export async function DELETE(
       success: true,
       message: `Member ${targetUser?.name || userId} was removed from the workspace.`,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') || msg.includes('Cannot remove') ? 403 : 400;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 400 }
+    );
   }
 }

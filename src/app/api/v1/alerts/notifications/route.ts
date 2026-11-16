@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { notificationStore } from '@/lib/storage/notificationStore';
 import { NotificationChannel } from '@/core/alerts/types';
 
@@ -25,6 +26,12 @@ export async function GET(req: NextRequest) {
       ...result,
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });
@@ -57,6 +64,12 @@ export async function PATCH(req: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });

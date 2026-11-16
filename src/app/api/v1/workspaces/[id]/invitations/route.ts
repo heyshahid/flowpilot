@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { invitationStore } from '@/lib/storage/invitationStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(
   req: NextRequest,
@@ -17,10 +18,17 @@ export async function GET(
       success: true,
       invitations,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') || msg.includes('Cross-workspace') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }
 
@@ -37,14 +45,14 @@ export async function POST(
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return NextResponse.json(
-        { success: false, error: 'A valid email address is required.' },
+        { success: false, error: 'A valid email address is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
 
     if (!role || !['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'].includes(role)) {
       return NextResponse.json(
-        { success: false, error: 'Valid role (OWNER, ADMIN, EDITOR, VIEWER) is required.' },
+        { success: false, error: 'Valid role (OWNER, ADMIN, EDITOR, VIEWER) is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -81,9 +89,16 @@ export async function POST(
       },
       { status: 201 }
     );
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Forbidden') || msg.includes('Unauthorized') ? 403 : 400;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 400 }
+    );
   }
 }

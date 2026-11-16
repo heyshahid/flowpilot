@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { workflowStore } from '@/lib/storage/workflowStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(
   req: NextRequest,
@@ -9,7 +10,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const authCtx = await AuthContextManager.resolve(req);
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
 
     const workflow = workflowStore.getById(id, authCtx.workspace.id);
     if (!workflow) {
@@ -20,6 +21,12 @@ export async function GET(
     }
     return NextResponse.json({ success: true, workflow });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
       { success: false, error: (error as Error).message },
       { status: 500 }
@@ -73,6 +80,12 @@ export async function PUT(
 
     return NextResponse.json({ success: true, workflow: updated });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     if (msg.includes('Conflict:')) {
       return NextResponse.json(
@@ -116,6 +129,12 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Workflow deleted successfully.' });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });

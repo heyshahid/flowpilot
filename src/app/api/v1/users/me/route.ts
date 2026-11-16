@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 import { membershipStore } from '@/lib/storage/membershipStore';
 import { workspaceStore } from '@/lib/storage/workspaceStore';
 import { userStore } from '@/lib/storage/userStore';
@@ -27,6 +28,12 @@ export async function GET(req: NextRequest) {
       allUsers, // Used for quick-switcher/impersonation in development testing
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
       { success: false, error: (error as Error).message },
       { status: 500 }

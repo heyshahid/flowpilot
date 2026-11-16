@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { workflowStore } from '@/lib/storage/workflowStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
     const workflows = workflowStore.getAll(authCtx.workspace.id);
     return NextResponse.json({
       success: true,
@@ -13,6 +14,12 @@ export async function GET(req: NextRequest) {
       workflows,
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
       { success: false, error: (error as Error).message },
       { status: 500 }
@@ -54,6 +61,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, workflow }, { status: 201 });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });

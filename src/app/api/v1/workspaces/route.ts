@@ -3,6 +3,7 @@ import { workspaceStore } from '@/lib/storage/workspaceStore';
 import { membershipStore } from '@/lib/storage/membershipStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,9 +22,15 @@ export async function GET(req: NextRequest) {
       activeWorkspaceId: authCtx.workspace.id,
       workspaces: visible,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: (error as Error).message },
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
       { status: 500 }
     );
   }
@@ -37,7 +44,7 @@ export async function POST(req: NextRequest) {
     const { name, description, plan, settings } = body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
-        { success: false, error: 'Workspace name is required.' },
+        { success: false, error: 'Workspace name is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -75,9 +82,15 @@ export async function POST(req: NextRequest) {
       { success: true, workspace: newWs },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: (error as Error).message },
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
       { status: 500 }
     );
   }

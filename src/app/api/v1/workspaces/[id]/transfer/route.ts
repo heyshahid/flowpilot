@@ -4,6 +4,7 @@ import { membershipStore } from '@/lib/storage/membershipStore';
 import { userStore } from '@/lib/storage/userStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function POST(
   req: NextRequest,
@@ -22,7 +23,7 @@ export async function POST(
 
     if (!newOwnerId || typeof newOwnerId !== 'string') {
       return NextResponse.json(
-        { success: false, error: 'Target newOwnerId is required.' },
+        { success: false, error: 'Target newOwnerId is required.', code: 'INVALID_INPUT' },
         { status: 400 }
       );
     }
@@ -30,7 +31,7 @@ export async function POST(
     const targetUser = userStore.getById(newOwnerId);
     if (!targetUser) {
       return NextResponse.json(
-        { success: false, error: 'Target user does not exist.' },
+        { success: false, error: 'Target user does not exist.', code: 'NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -38,7 +39,7 @@ export async function POST(
     const targetMembership = membershipStore.getMembership(id, newOwnerId);
     if (!targetMembership || targetMembership.status !== 'active') {
       return NextResponse.json(
-        { success: false, error: 'Target user must be an active member of this workspace.' },
+        { success: false, error: 'Target user must be an active member of this workspace.', code: 'INVALID_MEMBERSHIP' },
         { status: 400 }
       );
     }
@@ -72,9 +73,16 @@ export async function POST(
       message: `Ownership of workspace "${updatedWs.name}" transferred to ${targetUser.name}.`,
       workspace: updatedWs,
     });
-  } catch (error) {
-    const msg = (error as Error).message;
-    const status = msg.includes('Unauthorized') || msg.includes('Forbidden') ? 403 : 500;
-    return NextResponse.json({ success: false, error: msg }, { status });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error.', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
   }
 }

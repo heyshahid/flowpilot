@@ -424,6 +424,21 @@ class WorkflowStore {
     return this.save(original);
   }
 
+  public update(id: string, updates: Partial<WorkflowRecord>, workspaceId?: string): WorkflowRecord | null {
+    const original = this.getById(id, workspaceId);
+    if (!original) return null;
+
+    const updated: WorkflowRecord = {
+      ...original,
+      ...updates,
+      id: original.id,
+      workspaceId: original.workspaceId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return this.save(updated, { workspaceId: original.workspaceId });
+  }
+
   public rename(id: string, newName: string): WorkflowRecord | null {
     const original = this.getById(id);
     if (!original) return null;

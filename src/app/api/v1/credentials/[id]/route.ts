@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { credentialStore } from '@/lib/storage/credentialStore';
 import { auditLogStore } from '@/lib/storage/auditLogStore';
 import { AuthContextManager } from '@/core/auth/authContext';
+import { AuthError } from '@/core/auth/types';
 
 export async function GET(
   req: NextRequest,
@@ -19,6 +20,12 @@ export async function GET(
     const { encryptedData, ...safeRecord } = cred;
     return NextResponse.json({ success: true, credential: safeRecord });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });
@@ -53,6 +60,12 @@ export async function DELETE(
 
     return NextResponse.json({ success: deleted, message: 'Credential revoked successfully.' });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const msg = (error as Error).message;
     const status = msg.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });

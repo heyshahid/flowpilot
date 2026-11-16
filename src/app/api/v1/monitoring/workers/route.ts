@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthContextManager } from '@/core/auth/authContext';
-import { RBACManager } from '@/core/auth/rbac';
+import { AuthError } from '@/core/auth/types';
 import { monitoringService } from '@/core/monitoring/monitoringService';
 
 export async function GET(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
-    RBACManager.assertPermission(authCtx.role, 'workflow:read');
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:read');
 
     const workerObservability = monitoringService.getWorkerObservability();
 
@@ -16,6 +15,12 @@ export async function GET(req: NextRequest) {
       data: workerObservability,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     const status = error.message?.includes('Unauthorized')
       ? 401
       : error.message?.includes('Forbidden')
@@ -32,8 +37,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authCtx = await AuthContextManager.resolve(req);
-    RBACManager.assertPermission(authCtx.role, 'workflow:execute');
+    const authCtx = await AuthContextManager.enforcePermission(req, 'workflow:execute');
 
     let body = {};
     try {
@@ -50,6 +54,12 @@ export async function POST(req: NextRequest) {
       data: heartbeat,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code },
+        { status: error.statusCode }
+      );
+    }
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to record worker heartbeat' },
       { status: 500 }
