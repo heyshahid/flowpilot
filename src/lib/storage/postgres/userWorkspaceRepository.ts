@@ -12,13 +12,15 @@ export class PostgresUserWorkspaceRepository {
   // --- Users ---
 
   public async getUserById(id: string): Promise<UserRecord | null> {
-    const row = await (this.client as any).user.findUnique({ where: { id } });
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return null;
+    const row = await (this.client as any).user.findUnique({ where: { id: id.trim() } });
     if (!row) return null;
     return this.mapUser(row);
   }
 
   public async getUserByEmail(email: string): Promise<UserRecord | null> {
-    const row = await (this.client as any).user.findUnique({ where: { email } });
+    if (!email || typeof email !== 'string' || email.trim().length === 0) return null;
+    const row = await (this.client as any).user.findUnique({ where: { email: email.trim().toLowerCase() } });
     if (!row) return null;
     return this.mapUser(row);
   }
@@ -47,15 +49,101 @@ export class PostgresUserWorkspaceRepository {
   // --- Workspaces ---
 
   public async getWorkspaceById(id: string): Promise<WorkspaceRecord | null> {
-    const row = await (this.client as any).workspace.findUnique({ where: { id } });
+    if (!id || typeof id !== 'string' || id.trim().length === 0) return null;
+    const row = await (this.client as any).workspace.findUnique({ where: { id: id.trim() } });
     if (!row) return null;
     return this.mapWorkspace(row);
   }
 
   public async getWorkspaceBySlug(slug: string): Promise<WorkspaceRecord | null> {
-    const row = await (this.client as any).workspace.findUnique({ where: { slug } });
+    if (!slug || typeof slug !== 'string' || slug.trim().length === 0) return null;
+    const row = await (this.client as any).workspace.findUnique({ where: { slug: slug.trim() } });
     if (!row) return null;
     return this.mapWorkspace(row);
+  }
+
+  /**
+   * Retrieves workspace ownership and archived state.
+   */
+  public async getWorkspaceOwnership(
+    workspaceId: string
+  ): Promise<{ ownerId: string; isArchived: boolean } | null> {
+    if (!workspaceId || typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+      return null;
+    }
+    const row = await (this.client as any).workspace.findUnique({
+      where: { id: workspaceId.trim() },
+      select: { ownerId: true, isArchived: true },
+    });
+    if (!row) return null;
+    return { ownerId: row.ownerId, isArchived: !!row.isArchived };
+  }
+
+  /**
+   * Resolves the default active owned workspace for a user using deterministic ordering:
+   * 1. Only active owned workspaces (isArchived === false).
+   * 2. Primary order: createdAt ASC.
+   * 3. Secondary tie-breaker: id ASC.
+   */
+  public async getDefaultActiveWorkspace(ownerId: string): Promise<WorkspaceRecord | null> {
+    if (!ownerId || typeof ownerId !== 'string' || ownerId.trim().length === 0) {
+      return null;
+    }
+    const row = await (this.client as any).workspace.findFirst({
+      where: {
+        ownerId: ownerId.trim(),
+        isArchived: false,
+      },
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
+    });
+    if (!row) return null;
+    return this.mapWorkspace(row);
+  }
+
+  /**
+   * Validates workspace existence, non-archived status, and active user membership.
+   */
+  public async validateWorkspaceAccess(
+    workspaceId: string,
+    userId: string
+  ): Promise<{ hasAccess: boolean; role?: string; status?: string; isArchived?: boolean; reason?: string }> {
+    if (!workspaceId || !userId) {
+      return { hasAccess: false, reason: 'INVALID_PARAMETERS' };
+    }
+
+    const ws = await this.getWorkspaceOwnership(workspaceId);
+    if (!ws) {
+      return { hasAccess: false, reason: 'WORKSPACE_NOT_FOUND' };
+    }
+    if (ws.isArchived) {
+      return { hasAccess: false, isArchived: true, reason: 'WORKSPACE_ARCHIVED' };
+    }
+
+    const mem = await this.getMembership(workspaceId, userId);
+    if (!mem) {
+      return { hasAccess: false, reason: 'MEMBERSHIP_NOT_FOUND' };
+    }
+
+    const isActive = typeof mem.status === 'string' && mem.status.toLowerCase() === 'active';
+    if (!isActive) {
+      return {
+        hasAccess: false,
+        role: mem.role,
+        status: mem.status,
+        isArchived: false,
+        reason: 'MEMBERSHIP_NOT_ACTIVE',
+      };
+    }
+
+    return {
+      hasAccess: true,
+      role: mem.role,
+      status: mem.status,
+      isArchived: false,
+    };
   }
 
   public async upsertWorkspace(workspace: WorkspaceRecord): Promise<WorkspaceRecord> {
@@ -84,11 +172,12 @@ export class PostgresUserWorkspaceRepository {
   // --- Memberships ---
 
   public async getMembership(workspaceId: string, userId: string): Promise<MembershipRecord | null> {
+    if (!workspaceId || !userId) return null;
     const row = await (this.client as any).membership.findUnique({
       where: {
         workspaceId_userId: {
-          workspaceId,
-          userId,
+          workspaceId: workspaceId.trim(),
+          userId: userId.trim(),
         },
       },
     });
@@ -165,3 +254,5 @@ export class PostgresUserWorkspaceRepository {
     };
   }
 }
+
+export const userWorkspaceRepository = new PostgresUserWorkspaceRepository();
