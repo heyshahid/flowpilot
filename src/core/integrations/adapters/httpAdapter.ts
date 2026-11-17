@@ -1,5 +1,4 @@
-import { validateOutboundUrl } from '../../security/ssrf';
-import { maskSensitiveData } from '../../security/masking';
+import { executeSafeHttpRequest } from '../../security/ssrf';
 import { ConnectionTestResult, IntegrationAdapter } from '../types';
 
 export class HttpAdapter implements IntegrationAdapter {
@@ -10,7 +9,6 @@ export class HttpAdapter implements IntegrationAdapter {
     const testUrl = credentials.baseUrl || credentials.url || 'https://httpbin.org/get';
 
     try {
-      const validatedUrl = validateOutboundUrl(testUrl);
       const headers: Record<string, string> = {};
 
       if (credentials.authType === 'bearer_token' && credentials.token) {
@@ -26,9 +24,10 @@ export class HttpAdapter implements IntegrationAdapter {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
 
-      const res = await fetch(validatedUrl.toString(), {
+      const res = await executeSafeHttpRequest(testUrl, {
         method: 'GET',
         headers,
+        timeoutMs: 6000,
         signal: controller.signal,
       });
 
@@ -59,12 +58,13 @@ export class HttpAdapter implements IntegrationAdapter {
       throw new Error(`Unknown HTTP action "${actionId}". Supported: "request".`);
     }
 
-    const rawUrl = String(params.url || (credentials?.baseUrl ? `${credentials.baseUrl}${params.path || ''}` : ''));
+    const rawUrl = String(
+      params.url || (credentials?.baseUrl ? `${credentials.baseUrl}${params.path || ''}` : '')
+    );
     if (!rawUrl) {
       throw new Error('HTTP Request requires a target URL.');
     }
 
-    const validatedUrl = validateOutboundUrl(rawUrl);
     const method = String(params.method || 'GET').toUpperCase();
     const headers: Record<string, string> = { ...(params.headers || {}) };
 
@@ -80,7 +80,7 @@ export class HttpAdapter implements IntegrationAdapter {
       }
     }
 
-    let bodyData: BodyInit | undefined = undefined;
+    let bodyData: string | Buffer | null = null;
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       if (typeof params.body === 'object' && params.body !== null) {
         bodyData = JSON.stringify(params.body);
@@ -96,32 +96,25 @@ export class HttpAdapter implements IntegrationAdapter {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(validatedUrl.toString(), {
+      const response = await executeSafeHttpRequest(rawUrl, {
         method,
         headers,
         body: bodyData,
+        timeoutMs,
         signal: controller.signal,
       });
 
       clearTimeout(timer);
       const latencyMs = Date.now() - start;
-      const contentType = response.headers.get('content-type') || '';
-
-      let responseData: any;
-      if (contentType.includes('application/json')) {
-        responseData = await response.json();
-      } else {
-        responseData = await response.text();
-      }
 
       return {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-        data: responseData,
+        headers: response.headers,
+        data: response.data,
         durationMs: latencyMs,
-        requestUrl: validatedUrl.toString(),
+        requestUrl: response.url,
       };
     } catch (err: unknown) {
       clearTimeout(timer);
@@ -131,4 +124,3 @@ export class HttpAdapter implements IntegrationAdapter {
 }
 
 export const httpAdapter = new HttpAdapter();
-

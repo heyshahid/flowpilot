@@ -16,8 +16,16 @@ import { userStore } from '../src/lib/storage/userStore';
 import { workspaceStore } from '../src/lib/storage/workspaceStore';
 import { executionQueue } from '../src/core/execution/queue';
 import { CredentialVault } from '../src/core/security/vault';
-import { validateOutboundUrl, isForbiddenHostOrIp } from '../src/core/security/ssrf';
+import {
+  validateOutboundUrl,
+  isForbiddenHostOrIp,
+  isForbiddenIpAddress,
+  resolveAndValidateHost,
+  executeSafeHttpRequest,
+} from '../src/core/security/ssrf';
 import { httpAdapter } from '../src/core/integrations/adapters/httpAdapter';
+import { smtpAdapter } from '../src/core/integrations/adapters/smtpAdapter';
+import dns from 'dns';
 import { hashPassword, verifyPassword } from '../src/lib/security/argon2';
 import { hashToken } from '../src/lib/security/tokens';
 import { subWorkflowDriver } from '../src/core/runtime/drivers/subWorkflow';
@@ -634,11 +642,103 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
       }
 
       // Documentation assertion:
-      // validateOutboundUrl performs static string and hostname analysis prior to HTTP dispatch.
-      // Dynamic DNS rebinding (TTL 0 switching public -> private IP post-validation) or unvalidated 3xx redirects
-      // represent a documented architectural boundary where runtime socket-level IP binding is required.
       expect(isForbiddenHostOrIp('127.0.0.1')).toBe(true);
       expect(isForbiddenHostOrIp('169.254.169.254')).toBe(true);
+    });
+
+    it('C5: should detect and reject private IP ranges in IPv6, mapped IPv4, CGNAT, and link-local formats', () => {
+      // IPv6 loopback and brackets
+      expect(isForbiddenHostOrIp('::1')).toBe(true);
+      expect(isForbiddenHostOrIp('[::1]')).toBe(true);
+      expect(isForbiddenIpAddress('::1')).toBe(true);
+      expect(isForbiddenIpAddress('[::1]')).toBe(true);
+
+      // Unique Local Addresses (fc00::/7)
+      expect(isForbiddenIpAddress('fc00::1')).toBe(true);
+      expect(isForbiddenIpAddress('fd12:3456:789a::1')).toBe(true);
+
+      // Link-Local (fe80::/10)
+      expect(isForbiddenIpAddress('fe80::1')).toBe(true);
+      expect(isForbiddenHostOrIp('[fe80::1]')).toBe(true);
+
+      // IPv4-mapped IPv6 (::ffff:127.0.0.1 and hex ::ffff:7f00:1)
+      expect(isForbiddenIpAddress('::ffff:127.0.0.1')).toBe(true);
+      expect(isForbiddenIpAddress('::ffff:169.254.169.254')).toBe(true);
+      expect(isForbiddenIpAddress('::ffff:7f00:1')).toBe(true);
+      expect(isForbiddenHostOrIp('[::ffff:127.0.0.1]')).toBe(true);
+
+      // Carrier-Grade NAT (100.64.0.0/10)
+      expect(isForbiddenIpAddress('100.64.0.1')).toBe(true);
+      expect(isForbiddenIpAddress('100.127.255.254')).toBe(true);
+      expect(isForbiddenIpAddress('100.128.0.1')).toBe(false); // Outside CGNAT
+
+      // Multicast and Broadcast
+      expect(isForbiddenIpAddress('224.0.0.1')).toBe(true);
+      expect(isForbiddenIpAddress('255.255.255.255')).toBe(true);
+
+      // Disallow URL creation for bracketed internal IPv6
+      expect(() => validateOutboundUrl('http://[::1]:8080/secret')).toThrow(/SSRF Guard Security Violation/);
+      expect(() => validateOutboundUrl('http://[::ffff:127.0.0.1]:9000/api')).toThrow(/SSRF Guard Security Violation/);
+    });
+
+    it('C6: should prevent DNS rebinding by validating all resolved DNS addresses against SSRF policy', async () => {
+      // Mock dns.promises.lookup to simulate a DNS rebinding attack where domain resolves to a private IP
+      const lookupSpy = vi.spyOn(dns.promises, 'lookup').mockImplementation(async (hostname: string, options?: any) => {
+        if (hostname === 'attacker-rebound-domain.com') {
+          return [{ address: '169.254.169.254', family: 4 }] as any;
+        }
+        if (hostname === 'dual-homed-rebinding.com') {
+          return [
+            { address: '93.184.216.34', family: 4 }, // public IP
+            { address: '127.0.0.1', family: 4 },     // rebinding internal IP
+          ] as any;
+        }
+        return [{ address: '93.184.216.34', family: 4 }] as any;
+      });
+
+      try {
+        // Attacker domain resolves only to cloud metadata
+        await expect(resolveAndValidateHost('attacker-rebound-domain.com')).rejects.toThrow(
+          /resolved to forbidden private\/internal IP address "169.254.169.254"/i
+        );
+
+        // Dual-homed domain containing one safe and one internal IP must fail closed
+        await expect(resolveAndValidateHost('dual-homed-rebinding.com')).rejects.toThrow(
+          /resolved to forbidden private\/internal IP address "127.0.0.1"/i
+        );
+      } finally {
+        lookupSpy.mockRestore();
+      }
+    });
+
+    it('C7: should prevent SSRF in SmtpAdapter testConnection against loopback, metadata, and private hosts', async () => {
+      // 1. Direct loopback
+      const resLoopback = await smtpAdapter.testConnection({ host: '127.0.0.1', port: 25 });
+      expect(resLoopback.ok).toBe(false);
+      expect(resLoopback.message).toContain('SSRF Guard Security Violation');
+
+      // 2. Cloud metadata host
+      const resMeta = await smtpAdapter.testConnection({ host: '169.254.169.254', port: 25 });
+      expect(resMeta.ok).toBe(false);
+      expect(resMeta.message).toContain('SSRF Guard Security Violation');
+
+      // 3. Bracketed IPv6 loopback
+      const resIpv6 = await smtpAdapter.testConnection({ host: '[::1]', port: 25 });
+      expect(resIpv6.ok).toBe(false);
+      expect(resIpv6.message).toContain('SSRF Guard Security Violation');
+
+      // 4. DNS rebinding in SMTP connection test
+      const dnsSpy = vi.spyOn(dns.promises, 'lookup').mockResolvedValueOnce([
+        { address: '10.0.0.5', family: 4 },
+      ] as any);
+
+      try {
+        const resRebind = await smtpAdapter.testConnection({ host: 'mail.internal-rebinding.org', port: 587 });
+        expect(resRebind.ok).toBe(false);
+        expect(resRebind.message).toContain('forbidden private/internal IP address');
+      } finally {
+        dnsSpy.mockRestore();
+      }
     });
   });
 

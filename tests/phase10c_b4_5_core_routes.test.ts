@@ -547,7 +547,7 @@ describe('Phase 10C-B4.5-Correction: Strictly Scoped Multi-Tenant Security Suite
       };
 
       const resolvedConfig = {
-        url: 'https://api.external.com/data',
+        url: 'https://httpbin.org/get',
         method: 'GET',
         credentialId: credA.id, // Referencing Tenant A's credential!
       };
