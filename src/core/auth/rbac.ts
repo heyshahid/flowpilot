@@ -1,4 +1,4 @@
-import { Permission, UserRole } from './types';
+import { ForbiddenError, Permission, UserRole } from './types';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   OWNER: [
@@ -133,7 +133,7 @@ export class RBACManager {
    */
   public static assertPermission(role: UserRole, permission: Permission): void {
     if (!this.hasPermission(role, permission)) {
-      throw new Error(`Forbidden: Role "${role}" lacks permission "${permission}".`);
+      throw new ForbiddenError(`Role "${role}" lacks permission "${permission}".`);
     }
   }
 
