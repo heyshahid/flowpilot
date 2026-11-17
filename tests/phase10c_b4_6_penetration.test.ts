@@ -802,8 +802,12 @@ describe('Phase 10C-B4.6: Comprehensive Security & Penetration Assessment Suite'
       const adminRes = await transferWorkspaceRoute(adminReq, {
         params: Promise.resolve({ id: 'ws_tenant_a' }),
       });
-      // Blocked from completing transfer (status 403 or 500 RBAC denial)
-      expect([403, 500]).toContain(adminRes.status);
+      // Strictly rejected with HTTP 403 Forbidden and standard payload
+      expect(adminRes.status).toBe(403);
+      const adminJson = await adminRes.json();
+      expect(adminJson.success).toBe(false);
+      expect(adminJson.code).toBe('FORBIDDEN');
+      expect(adminJson.error).toContain('Forbidden');
     });
   });
 
