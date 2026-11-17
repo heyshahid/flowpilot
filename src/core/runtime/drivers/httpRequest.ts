@@ -1,4 +1,4 @@
-import { validateOutboundUrl } from '../../security/ssrf';
+import { executeSafeHttpRequest } from '../../security/ssrf';
 import { maskSensitiveData } from '../../security/masking';
 import { credentialStore } from '../../../lib/storage/credentialStore';
 import { NodeDriver } from '../types';
@@ -8,9 +8,6 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
   if (!rawUrl) {
     throw new Error('HTTP Request node requires a valid "url" configuration.');
   }
-
-  // 1. Strict SSRF Protection Check (Blocks localhost, RFC 1918, Cloud metadata)
-  const validatedUrl = validateOutboundUrl(rawUrl);
 
   const method = String(resolvedConfig.method || 'GET').toUpperCase();
   const timeoutMs = Number(resolvedConfig.timeoutMs || 10000);
@@ -47,7 +44,7 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
       }
     }
 
-    let bodyData: BodyInit | null | undefined = undefined;
+    let bodyData: string | Buffer | null = null;
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       if (typeof resolvedConfig.body === 'object' && resolvedConfig.body !== null) {
         bodyData = JSON.stringify(resolvedConfig.body);
@@ -59,31 +56,25 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
       }
     }
 
-    const response = await fetch(validatedUrl.toString(), {
+    // Execute with full SSRF protection (DNS rebinding prevention + safe redirect traversal)
+    const response = await executeSafeHttpRequest(rawUrl, {
       method,
       headers,
       body: bodyData,
+      timeoutMs,
       signal: timeoutController.signal,
     });
 
     clearTimeout(timer);
 
-    const contentType = response.headers.get('content-type') || '';
-    let responseData: unknown;
-    if (contentType.includes('application/json')) {
-      responseData = await response.json();
-    } else {
-      responseData = await response.text();
-    }
-
     return {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
-      headers: Object.fromEntries(response.headers.entries()),
-      data: responseData,
+      headers: response.headers,
+      data: response.data,
       request: {
-        url: validatedUrl.toString(),
+        url: response.url,
         method,
         headers: maskSensitiveData(headers),
       },
@@ -99,4 +90,3 @@ export const httpRequestDriver: NodeDriver = async (context, resolvedConfig) => 
     throw err;
   }
 };
-
